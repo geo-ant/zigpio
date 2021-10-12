@@ -11,16 +11,19 @@ pub fn main() anyerror!void {
     var gpalloc = std.heap.GeneralPurposeAllocator(.{}){};
     defer _= gpalloc.deinit();
 
-    var mock_mem = try mocks.MockGpioMemoryMapper.init(&gpalloc.allocator,bcm2835.Bcm2835Info.gpio_registers);
+    var mock_mem = try mocks.MockGpioMemoryMapper.init(&gpalloc.allocator,bcm2835.BoardInfo.gpio_registers);
     defer mock_mem.deinit();
 
     var arr  = [_]u8{1,2,3};
     var ptr :  []volatile u8 = arr[0..2];
-    std.log.info("All your codebase are belong to us.{}, {}", .{bcm2835.Bcm2835Info.peripheral_addresses.start, 0b100011});
+    std.log.info("All your codebase are belong to us.{}, {}", .{bcm2835.BoardInfo.peripheral_addresses.start, 0b100011});
 
     _ = ptr;
     _ = arr;
+    std.log.info("sizeof u3 = {}, bitsizeof u3 = {}", .{@sizeOf(u3),@bitSizeOf(gpio.Mode)});
 
     try gpio.init(&mock_mem.memory_mapper);
+
+    try gpio.setMode(12, gpio.Mode.Alternate0);
     
 }
