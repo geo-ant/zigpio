@@ -52,7 +52,7 @@ pub fn deinit() void {
 }
 
 // write the given level to the pin
-fn write(pin_number: u8, level: Level) !void {
+pub fn setLevel(pin_number: u8, level: Level) !void {
     var registers = g_gpio_registers orelse return Error.Unitialized;
 
     if (pin_number > bcm2835.BoardInfo.NUM_GPIO_PINS) {
@@ -70,8 +70,10 @@ fn write(pin_number: u8, level: Level) !void {
     // which of the Set{n} (n=0,1) or GET{n}registers to use depends on which pin needs to be set#
     // because each of these registers hold 32 pins at most (the last one actually holds less)
     const n = pin_number % @bitSizeOf(peripherals.GpioRegister);
-    registers[register_offset + n] |= 1 << n;
+    registers[register_offset + n] |= @intCast(peripherals.GpioRegister,1) << @intCast(u5,n);
 }
+
+//TODO function getLevel
 
 pub fn setMode(pin_number: u8, mode: Mode) !void {
     var registers = g_gpio_registers orelse return Error.Unitialized;
@@ -83,6 +85,12 @@ pub fn setMode(pin_number: u8, mode: Mode) !void {
     // the number of bits in the register by the number of bits for the function
     // as of now 3 bits for the function and 32 bits for the register make 10 pins per register
     const pins_per_register = comptime @divTrunc(@bitSizeOf(peripherals.GpioRegister), @bitSizeOf(Mode));
+    
+    /////////TODO TODO TODO!!!!!!!!!!
+    // this offset is wrong since the starts are in bytes by the register width is 4 bytes
+    // make a better comptime function in the info structure that gives me the offset in registers 
+    // something like ... i dont't knwo too tired to think of a good name
+    
     const gpfsel_register_offset = comptime bcm2835.BoardInfo.gpfsel_registers.start - bcm2835.BoardInfo.gpio_registers.start;
     const n: @TypeOf(pin_number) = @divTrunc(pin_number, pins_per_register);
 
@@ -94,6 +102,14 @@ pub fn setMode(pin_number: u8, mode: Mode) !void {
     const mode_setting_mask = modeMask(pin_number, mode);
     registers[gpfsel_register_offset + n] &= mode_setting_mask;
 }
+
+//TODO
+// pub fn getMode(pin_number : u8, mode : Mode) !Mode {
+//     //TODO: check if it is valid to read the mode!
+//     //we should be able to do some elegant comptime magic by extracting the mode from the register
+//     //shifting it and casting it into u3 and then INLINE FOR-ING through the enum variants
+//     //and comparing it to the variants in the enum. if none matches => error
+// }
 
 /// calculates the mask that needs to be shifted to the correct pin and
 /// bitwise anded to the register to set the desired mode for that pin

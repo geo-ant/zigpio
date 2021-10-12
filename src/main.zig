@@ -23,7 +23,7 @@ pub fn main() anyerror!void {
     std.log.info("sizeof u3 = {}, bitsizeof u3 = {}", .{@sizeOf(u3),@bitSizeOf(gpio.Mode)});
 
     try gpio.init(&mock_mem.memory_mapper);
-
+    try gpio.setLevel(2,gpio.Level.High);
     try gpio.setMode(12, gpio.Mode.Alternate0);
     
 }
