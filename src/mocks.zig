@@ -8,7 +8,6 @@ const std = @import("std");
 /// to the physical memory of the peripherals
 pub const MockGpioMemoryMapper = struct {
     const Self = @This();
-    const RegisterType :type  = u32;
 
     /// the buffer used to provide the mock memory.
     /// This is allocated and deallocated in this buffer
@@ -20,9 +19,14 @@ pub const MockGpioMemoryMapper = struct {
 
     /// create a new mock that pretends it is mapping the given address range
     pub fn init(allocator: *std.mem.Allocator, addresses_to_emulate: peripherals.AddressRange) !Self {
-        return Self{ .allocator = allocator,
+        var initial =  Self{ .allocator = allocator,
          .memory_mapper = .{ .map_fn = mappedPhysicalMemoryImpl }, 
-         .buffer = try allocator.alloc(u32, try std.math.divExact(usize,addresses_to_emulate.len, @sizeOf(RegisterType))) };
+         .buffer = try allocator.allocWithOptions(peripherals.GpioRegister, try std.math.divExact(usize,addresses_to_emulate.len, @sizeOf(peripherals.GpioRegister)), 1, null)};
+        // zero initialize the buffer
+        for(initial.buffer) |*elem| {
+            elem.* = 0;
+        }
+        return initial;
     }
 
     pub fn deinit(self : *Self) void {

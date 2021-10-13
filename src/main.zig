@@ -25,5 +25,5 @@ pub fn main() anyerror!void {
     try gpio.init(&mock_mem.memory_mapper);
     try gpio.setLevel(2,gpio.Level.High);
     try gpio.setMode(12, gpio.Mode.Alternate0);
-    
+    _ = try gpio.getLevel(2); // in mock mode this of course will not display High because the level is read in a different register!
 }

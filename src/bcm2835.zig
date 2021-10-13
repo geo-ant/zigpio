@@ -20,8 +20,9 @@ pub const BoardInfo = struct {
     pub const gpset_registers : AddressRange = .{.start = gpfsel_registers.start + 0x1C , .len = 2*4};
     /// physical address space of the gpio registers GPCLR{n} (clearing pin output)
     pub const gpclr_registers : AddressRange = .{.start = gpfsel_registers.start + 0x28 , .len = 2*4};
-    // /// physical address space of the gpio registers GPLEV{n} (reading pin levels)
-    // TODO
+    /// physical address space of the gpio registers GPLEV{n} (reading pin levels)
+    pub const gplev_registers : AddressRange = .{.start = gpfsel_registers.start + 0x34, .len = 2*4 };
+    
 
     /// the number of GPIO pins
     pub const NUM_GPIO_PINS = 53;

@@ -4,7 +4,7 @@ const bcm2835 = @import("bcm2835.zig");
 const peripherals = @import("peripherals.zig");
 
 /// enumerates the GPio level (high/low)
-pub const Level = enum { High, Low };
+pub const Level = enum(u1) { High = 0x1, Low = 0x0 };
 
 /// enumerates the gpio functionality
 /// the enum values are the bits that need to be written into the
@@ -58,22 +58,38 @@ pub fn setLevel(pin_number: u8, level: Level) !void {
     if (pin_number > bcm2835.BoardInfo.NUM_GPIO_PINS) {
         return Error.IllegalPinNumber;
     }
-    const gpio_start = bcm2835.BoardInfo.gpio_registers.start;
+
     // register offset to find the correct set or clear register depending on the level:
     // setting works by writing a 1 to the bit that corresponds to the pin in the appropriate GPSET{n} register
     // and clearing works by writing a 1 to the bit that corresponds to the pin in the appropriate GPCLR{n} register
     // writing a 0 to those registers doesn't do anything
-    const register_offset = switch (level) {
-        .High => bcm2835.BoardInfo.gpset_registers.start - gpio_start, // "set" GPSET{n} registers
-        .Low => bcm2835.BoardInfo.gpclr_registers.start - gpio_start, // "clear" GPCLR{n} registers
+    const register_zero : peripherals.GpioRegister = switch (level) {
+        .High => comptime gpioRegisterZeroIndex("gpset_registers", bcm2835.BoardInfo), // "set" GPSET{n} registers
+        .Low => comptime gpioRegisterZeroIndex("gpclr_registers",bcm2835.BoardInfo), // "clear" GPCLR{n} registers
     };
     // which of the Set{n} (n=0,1) or GET{n}registers to use depends on which pin needs to be set#
     // because each of these registers hold 32 pins at most (the last one actually holds less)
     const n = pin_number % @bitSizeOf(peripherals.GpioRegister);
-    registers[register_offset + n] |= @intCast(peripherals.GpioRegister,1) << @intCast(u5,n);
+    registers[register_zero + n] |= @intCast(peripherals.GpioRegister, 1) << @intCast(u5, n);
 }
 
-//TODO function getLevel
+pub fn getLevel(pin_number : u8) !Level {
+    var registers = g_gpio_registers orelse return Error.Unitialized;
+
+    if (pin_number > bcm2835.BoardInfo.NUM_GPIO_PINS) {
+        return Error.IllegalPinNumber;
+    }
+
+    const gplev_register_zero = comptime gpioRegisterZeroIndex("gplev_registers", bcm2835.BoardInfo);
+    const n = pin_number % @bitSizeOf(peripherals.GpioRegister);
+
+    const pin_value = registers[gplev_register_zero + n] & (@intCast(peripherals.GpioRegister, 1) << @intCast(u5, n));
+    if(pin_value == 1) {
+        return .High;
+    } else {
+        return .Low;
+    }
+}
 
 pub fn setMode(pin_number: u8, mode: Mode) !void {
     var registers = g_gpio_registers orelse return Error.Unitialized;
@@ -85,25 +101,26 @@ pub fn setMode(pin_number: u8, mode: Mode) !void {
     // the number of bits in the register by the number of bits for the function
     // as of now 3 bits for the function and 32 bits for the register make 10 pins per register
     const pins_per_register = comptime @divTrunc(@bitSizeOf(peripherals.GpioRegister), @bitSizeOf(Mode));
-    
+
     /////////TODO TODO TODO!!!!!!!!!!
     // this offset is wrong since the starts are in bytes by the register width is 4 bytes
-    // make a better comptime function in the info structure that gives me the offset in registers 
+    // make a better comptime function in the info structure that gives me the offset in registers
     // something like ... i dont't knwo too tired to think of a good name
-    
-    const gpfsel_register_offset = comptime bcm2835.BoardInfo.gpfsel_registers.start - bcm2835.BoardInfo.gpio_registers.start;
+    // TODO something like register_index
+
+    const gpfsel_register_zero = comptime gpioRegisterZeroIndex("gpfsel_registers",bcm2835.BoardInfo);
     const n: @TypeOf(pin_number) = @divTrunc(pin_number, pins_per_register);
 
     // the input functionality clears the register, which is why we apply it alway
     // (see https://github.com/ziglang/zig/issues/7605 for why we have to cast)
     const input_and_clear_mask = modeMask(pin_number, Mode.Input);
-    registers[gpfsel_register_offset + n] &= input_and_clear_mask;
+    registers[gpfsel_register_zero + n] &= input_and_clear_mask;
 
     const mode_setting_mask = modeMask(pin_number, mode);
-    registers[gpfsel_register_offset + n] &= mode_setting_mask;
+    registers[gpfsel_register_zero + n] &= mode_setting_mask;
 }
 
-//TODO
+// //TODO
 // pub fn getMode(pin_number : u8, mode : Mode) !Mode {
 //     //TODO: check if it is valid to read the mode!
 //     //we should be able to do some elegant comptime magic by extracting the mode from the register
@@ -125,4 +142,37 @@ inline fn modeMask(pin_number: u8, mode: Mode) peripherals.GpioRegister {
     // invert the whole thing and we end up with 111...xyz...111
     // we can bitwise and this to the register to set the mode of the given pin
     return (~(@intCast(peripherals.GpioRegister, ~@enumToInt(mode)) << @intCast(u5, (pin_bit_idx * @bitSizeOf(Mode)))));
+}
+
+pub fn gpioRegisterZeroIndex(comptime register_name : []const u8, board_info : anytype) comptime_int {
+    return comptime std.math.divExact(comptime_int,@field(board_info, register_name).start-board_info.gpio_registers.start, @sizeOf(peripherals.GpioRegister)) catch @compileError("Offset not evenly divisible by register width");
+}
+
+const testing = std.testing;
+
+test "modeMask" {
+    // since the code below is manually verified for 32bit registers and 3bit function info
+    // we have to make sure this still holds at compile time.
+    comptime std.debug.assert(@bitSizeOf(peripherals.GpioRegister) == 32);
+    comptime std.debug.assert(@bitSizeOf(Mode) == 3);
+
+    // see online hex editor, e.g. https://hexed.it/
+    try testing.expect(modeMask(0, Mode.Input)==~@intCast(peripherals.GpioRegister, 7));
+    std.log.info("mode mask = {b}", .{modeMask(3, Mode.Input)});
+    try testing.expect(modeMask(3, Mode.Input)==0b11111111111111111111000111111111);
+    try testing.expect(modeMask(13, Mode.Input)==0b11111111111111111111000111111111);
+    try testing.expect(modeMask(13,Mode.Output)==0b11111111111111111111001111111111);
+}
+
+
+test "gpioRegisterZeroIndex" {
+    // the test is hand verified for 4 byte registers as is the case in the bcm2835
+    // so we need to make sure this prerequisite is fulfilled
+    comptime std.debug.assert(@sizeOf(peripherals.GpioRegister)==4);
+    // manually verified using the BCM2835 ARM Peripherals Manual
+    const board_info = bcm2835.BoardInfo;
+    try testing.expectEqual(0,gpioRegisterZeroIndex("gpfsel_registers",board_info));
+    try testing.expectEqual(7,gpioRegisterZeroIndex("gpset_registers",board_info));
+    try testing.expectEqual(10,gpioRegisterZeroIndex("gpclr_registers",board_info));
+    try testing.expectEqual(13,gpioRegisterZeroIndex("gplev_registers",board_info));
 }
