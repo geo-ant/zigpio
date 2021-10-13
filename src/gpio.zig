@@ -41,7 +41,7 @@ pub const Error = error{
 var g_gpio_registers: ?peripherals.GpioRegisterMemory = null;
 
 /// initialize the GPIO control with the given memory mapping
-pub fn init(memory_interface: *peripherals.GpiomemMapper) !void {
+pub fn init(memory_interface: *peripherals.GpioMemMapper) !void {
     g_gpio_registers = try memory_interface.memoryMap();
 }
 
