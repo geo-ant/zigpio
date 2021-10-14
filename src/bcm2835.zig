@@ -2,6 +2,8 @@ const peripherals = @import("peripherals.zig");
 
 const AddressRange = peripherals.AddressRange;
 
+const std = @import("std");
+
 /// A structure containin info about the BCM2835 chip
 /// see this website which does a brilliant job of explaining everything
 /// https://www.pieter-jan.com/node/15
@@ -22,24 +24,33 @@ pub const BoardInfo = struct {
     pub const gpclr_registers : AddressRange = .{.start = gpfsel_registers.start + 0x28 , .len = 2*4};
     /// physical address space of the gpio registers GPLEV{n} (reading pin levels)
     pub const gplev_registers : AddressRange = .{.start = gpfsel_registers.start + 0x34, .len = 2*4 };
-    
 
     /// the number of GPIO pins
     pub const NUM_GPIO_PINS = 53;
 };
 
-// pub const Bcm2835GpioMemoryMapping = struct {
-//     /// slice pointing to the physical mem location of the gpio registers
-//     gpio_physical_memory : []u8,
-//     memory_interface : peripherals.MemoryMapper,
+pub const Bcm2385GpioMemoryMapper = struct {
+    const Self : type = @This();
+    
+    /// the GpioMemMapper interface
+    memory_mapper : peripherals.GpioMemMapper,
+    /// the raw bytes representing the memory mapping
+    gpio_memory_mapping : []u8,
 
-//     const Self = @This();
+    pub fn init() !Self {
+        const devgpiomem = try std.fs.openFileAbsolute("dev/gpiomem", std.fs.File.OpenFlags{.read = true});
+        defer devgpiomem.close();
 
-//     pub fn init() Self{
-        
-//     }
+        return Self {
+            //TODO remove hardcoded size!!!!!!!!!!!
+            .gpio_memory_mapping =  try std.os.mmap(null, 0xB4, std.os.PROT.READ | std.os.PROT.WRITE, std.os.MAP.SHARED, devgpiomem.handle, 0),
+            .memory_mapper = .{.map_fn = Self.memoryMap}
+        };
+       
+    }
 
-//     pub fn physicalMemoryMap() ![]u8 {
-//         return "test test";
-//     }
-// };
+    pub fn memoryMap(interface : *peripherals.GpioMemMapper) !peripherals.GpioRegisterMemory {
+        var self = @fieldParentPtr(Self, "memory_mapper", interface);
+        return std.mem.bytesAsSlice(u32,self.gpio_memory_mapping);
+    }
+};
