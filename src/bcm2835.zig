@@ -38,7 +38,7 @@ pub const Bcm2385GpioMemoryMapper = struct {
     gpio_memory_mapping : []u8,
 
     pub fn init() !Self {
-        const devgpiomem = try std.fs.openFileAbsolute("dev/gpiomem", std.fs.File.OpenFlags{.read = true});
+        const devgpiomem = try std.fs.openFileAbsolute("/dev/gpiomem", std.fs.File.OpenFlags{.read = true,.write = true});
         defer devgpiomem.close();
 
         return Self {
@@ -47,6 +47,11 @@ pub const Bcm2385GpioMemoryMapper = struct {
             .memory_mapper = .{.map_fn = Self.memoryMap}
         };
        
+    }
+
+    pub fn deinit() void {
+        // todo unmap the memory
+        @compileError("todo implement");
     }
 
     pub fn memoryMap(interface : *peripherals.GpioMemMapper) !peripherals.GpioRegisterMemory {

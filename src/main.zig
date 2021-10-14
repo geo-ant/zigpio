@@ -26,7 +26,8 @@ pub fn main() anyerror!void {
     // _ = try gpio.getLevel(2); // in mock mode this of course will not display High because the level is read in a different register!
 
     var mapper = try bcm2835.Bcm2385GpioMemoryMapper.init();
-
+    defer mapper.deinit();
+    
     try gpio.init(&mapper.memory_mapper);
 
     try setAllPinModes(.Output);
