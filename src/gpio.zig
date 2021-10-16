@@ -101,12 +101,8 @@ pub fn setMode(pin_number: u8, mode: Mode) !void {
     // the number of bits in the register by the number of bits for the function
     // as of now 3 bits for the function and 32 bits for the register make 10 pins per register
     const pins_per_register = comptime @divTrunc(@bitSizeOf(peripherals.GpioRegister), @bitSizeOf(Mode));
+    std.log.info("pins_per_register: {}", .{pins_per_register});
 
-    /////////TODO TODO TODO!!!!!!!!!!
-    // this offset is wrong since the starts are in bytes by the register width is 4 bytes
-    // make a better comptime function in the info structure that gives me the offset in registers
-    // something like ... i dont't knwo too tired to think of a good name
-    // TODO something like register_index
 
     const gpfsel_register_zero = comptime gpioRegisterZeroIndex("gpfsel_registers",bcm2835.BoardInfo);
     const n: @TypeOf(pin_number) = @divTrunc(pin_number, pins_per_register);
