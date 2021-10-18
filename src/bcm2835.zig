@@ -16,7 +16,7 @@ pub const BoardInfo = struct {
     /// the *physical* address space of all peripherals
     pub const peripheral_addresses: AddressRange = .{ .start = 0x20000000, .len = 0xFFFFFF };
     // address space of the GPIO registers
-    pub const gpio_registers = .{.start = peripheral_addresses.start + 0x200000, .len = 0xB0};
+    pub const gpio_registers = .{.start = peripheral_addresses.start + 0x200000, .len = 0xB4};
     // /// physical address space of the gpio registers GPFSEL{n} (function select)
     pub const gpfsel_registers: AddressRange = .{ .start = peripheral_addresses.start + 0x200000, .len = 6*4};
     /// physical address space of the gpio registers GPSET{n} (output setting)

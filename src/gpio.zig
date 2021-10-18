@@ -46,7 +46,8 @@ pub fn init(memory_interface: *peripherals.GpioMemMapper) !void {
 }
 
 /// deinitialize
-/// This function will not release access of the GPIO memory
+/// This function will not release access of the GPIO memory, instead
+/// it will perform some cleanup for the internals of this implementation
 pub fn deinit() void {
     g_gpio_registers = null;
 }
@@ -63,14 +64,16 @@ pub fn setLevel(pin_number: u8, level: Level) !void {
     // setting works by writing a 1 to the bit that corresponds to the pin in the appropriate GPSET{n} register
     // and clearing works by writing a 1 to the bit that corresponds to the pin in the appropriate GPCLR{n} register
     // writing a 0 to those registers doesn't do anything
-    const register_zero : peripherals.GpioRegister = switch (level) {
+    const register_zero : usize = switch (level) {
         .High => comptime gpioRegisterZeroIndex("gpset_registers", bcm2835.BoardInfo), // "set" GPSET{n} registers
         .Low => comptime gpioRegisterZeroIndex("gpclr_registers",bcm2835.BoardInfo), // "clear" GPCLR{n} registers
     };
     // which of the Set{n} (n=0,1) or GET{n}registers to use depends on which pin needs to be set#
     // because each of these registers hold 32 pins at most (the last one actually holds less)
-    const n = pin_number % @bitSizeOf(peripherals.GpioRegister);
-    registers[register_zero + n] |= @intCast(peripherals.GpioRegister, 1) << @intCast(u5, n);
+    const pins_per_register = comptime @bitSizeOf(peripherals.GpioRegister);
+    const n  =  @divTrunc(pin_number, pins_per_register);
+    const pin_shift  = @intCast(u5,pin_number % pins_per_register);
+    registers[register_zero + n] |= (@intCast(peripherals.GpioRegister, 1) << pin_shift);
 }
 
 pub fn getLevel(pin_number : u8) !Level {

@@ -2,7 +2,7 @@ const std = @import("std");
 
 const bcm2835 = @import("bcm2835.zig");
 
-const mocks = @import("mocks.zig");
+const mocks = @import("integration-tests/mocks.zig");
 
 const gpio = @import("gpio.zig");
 

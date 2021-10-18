@@ -1,4 +1,4 @@
-pub const peripherals = @import("peripherals.zig");
+pub const peripherals = @import("../peripherals.zig");
 
 
 
@@ -31,6 +31,10 @@ pub const MockGpioMemoryMapper = struct {
 
     pub fn deinit(self : *Self) void {
         self.allocator.free(self.buffer);
+    }
+
+    pub fn value_at(self : Self, register_index : usize) peripherals.GpioRegister{
+        return self.buffer[register_index];
     }
 
     fn mappedPhysicalMemoryImpl(interface: *peripherals.GpioMemMapper) !peripherals.GpioRegisterMemory {
