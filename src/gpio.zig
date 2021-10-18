@@ -117,7 +117,7 @@ pub fn setMode(pin_number: u8, mode: Mode) !void {
     registers[gpfsel_register_zero + n] &= input_and_clear_mask;
 
     const mode_setting_mask = modeMask(pin_number, mode);
-    registers[gpfsel_register_zero + n] &= mode_setting_mask;
+    registers[gpfsel_register_zero + n] &= mode_setting_mask; // TODO ??????????????? maybe or here??????
 }
 
 // //TODO

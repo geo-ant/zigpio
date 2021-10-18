@@ -16,8 +16,8 @@ test "SetLevel - High" {
     // we can set the level to high without having to worry about setting the pin to the right mode
     // because we are just interested in the correct value being written into the right register
     // but before we do, verify that the gpset registers indeed hold only null values
-    try std.testing.expectEqual(gpiomem.registerValue(7), 0);
-    try std.testing.expectEqual(gpiomem.registerValue(8), 0);
+    try std.testing.expectEqual(gpiomem.registerValue(7), 0); //gpset0
+    try std.testing.expectEqual(gpiomem.registerValue(8), 0); //gpset1
 
     try gpio.setLevel(0, .High);
     try std.testing.expectEqual(gpiomem.registerValue(7), 0b1);
@@ -39,8 +39,8 @@ test "SetLevel - Low" {
     try gpio.init(&gpiomem.memory_mapper);
     defer gpio.deinit();
 
-    try std.testing.expectEqual(gpiomem.registerValue(10), 0);
-    try std.testing.expectEqual(gpiomem.registerValue(11), 0);
+    try std.testing.expectEqual(gpiomem.registerValue(10), 0); //gpclr0
+    try std.testing.expectEqual(gpiomem.registerValue(11), 0); //gpclr1
 
     try gpio.setLevel(0, .Low);
     try std.testing.expectEqual(gpiomem.registerValue(10), 0b1);
@@ -65,8 +65,8 @@ test "GetLevel" {
     const gplev0 = 0b1001001; //pins high: (0,3,6)
     const gplev1 = 0b0110110; //pins high: 32 + (1,2,4,5)
 
-    try gpiomem.setRegisterValue(13, gplev0);
-    try gpiomem.setRegisterValue(14, gplev1);
+    try gpiomem.setRegisterValue(13, gplev0); //gplev0
+    try gpiomem.setRegisterValue(14, gplev1); //gplev1
 
     try std.testing.expectEqual(gpio.getLevel(0), .High);
     try std.testing.expectEqual(gpio.getLevel(1), .Low);
@@ -85,5 +85,24 @@ test "GetLevel" {
 }
 
 test "SetMode" {
-    try std.testing.expect(false);
+    std.testing.log_level = .debug;
+    var allocator = std.testing.allocator;
+    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.gpio_registers);
+    defer gpiomem.deinit();
+
+    try gpio.init(&gpiomem.memory_mapper);
+    defer gpio.deinit();
+
+    try std.testing.expectEqual(gpiomem.registerValue(0), 0); //gpfsel0
+    try std.testing.expectEqual(gpiomem.registerValue(1), 0); //gpfsel1
+    try std.testing.expectEqual(gpiomem.registerValue(5), 0); //gpfsel5
+
+    try gpio.setMode(0, .Input);
+    try std.testing.expectEqual(gpiomem.registerValue(0), 0b0); 
+    try gpio.setMode(1, .Output);
+    try std.testing.expectEqual(gpiomem.registerValue(0), 0b001000); 
+    try gpio.setMode(11, .Alternate1);
+    try std.testing.expectEqual(gpiomem.registerValue(1), 0b101000); 
+    try gpio.setMode(50, .Alternate1);
+    try std.testing.expectEqual(gpiomem.registerValue(5), 0b101); 
 }
