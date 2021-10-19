@@ -106,18 +106,13 @@ pub fn setMode(pin_number: u8, mode: Mode) !void {
     // the number of bits in the register by the number of bits for the function
     // as of now 3 bits for the function and 32 bits for the register make 10 pins per register
     const pins_per_register = comptime @divTrunc(@bitSizeOf(peripherals.GpioRegister), @bitSizeOf(Mode));
-    std.log.info("pins_per_register: {}", .{pins_per_register});
 
     const gpfsel_register_zero = comptime gpioRegisterZeroIndex("gpfsel_registers", bcm2835.BoardInfo);
     const n: @TypeOf(pin_number) = @divTrunc(pin_number, pins_per_register);
-
-    // the input functionality clears the register, which is why we apply it alway
-    // (see https://github.com/ziglang/zig/issues/7605 for why we have to cast)
-    const input_and_clear_mask = modeMask(pin_number, Mode.Input);
-    registers[gpfsel_register_zero + n] &= input_and_clear_mask;
-
-    const mode_setting_mask = modeMask(pin_number, mode);
-    registers[gpfsel_register_zero + n] &= mode_setting_mask; // TODO ??????????????? maybe or here??????
+    
+    // set the bits of the corresponding pins to zero so that we can bitwise or the correct mask to it below
+    registers[gpfsel_register_zero + n] &= clearMask(pin_number); // use bitwise-& here
+    registers[gpfsel_register_zero + n] |= modeMask(pin_number, mode); // use bitwise-| here TODO, this is dumb, rework the mode setting mask to not have the inverse!
 }
 
 // //TODO
@@ -134,21 +129,44 @@ inline fn modeMask(pin_number: u8, mode: Mode) peripherals.GpioRegister {
     const pins_per_register = comptime @divTrunc(@bitSizeOf(peripherals.GpioRegister), @bitSizeOf(Mode));
     const pin_bit_idx = pin_number % pins_per_register;
 
-    // convert the mode to a 3 bit integer: xyz (binary)
-    // then invert the mode abc = ~xyz (binary)
-    // then convert this to an integer 000...000abc (binary) of register width
-    // shift this by the appropriate amount (right now 3 bits per pin in a register)
-    // 000...abc...000
-    // invert the whole thing and we end up with 111...xyz...111
-    // we can bitwise and this to the register to set the mode of the given pin
-    return (~(@intCast(peripherals.GpioRegister, ~@enumToInt(mode)) << @intCast(u5, (pin_bit_idx * @bitSizeOf(Mode)))));
+    // shift the mode to the correct bits for the pin. Mode mask 0...xxx...0
+    return @intCast(peripherals.GpioRegister, @enumToInt(mode)) << @intCast(u5, (pin_bit_idx * @bitSizeOf(Mode)));
 }
 
-pub fn gpioRegisterZeroIndex(comptime register_name: []const u8, board_info: anytype) comptime_int {
+fn gpioRegisterZeroIndex(comptime register_name: []const u8, board_info: anytype) comptime_int {
     return comptime std.math.divExact(comptime_int, @field(board_info, register_name).start - board_info.gpio_registers.start, @sizeOf(peripherals.GpioRegister)) catch @compileError("Offset not evenly divisible by register width");
 }
 
+/// make a binary mask for clearing the associated region of th GPFSET register
+inline fn clearMask(pin_number : u8) peripherals.GpioRegister {
+    const pins_per_register = comptime @divTrunc(@bitSizeOf(peripherals.GpioRegister), @bitSizeOf(Mode));
+    const pin_bit_idx = pin_number % pins_per_register;
+    // the input config should be zero
+    // if it is, then the following logic will work
+    comptime std.debug.assert(@enumToInt(Mode.Input)==0);
+    // convert the mode to a 3 bit integer: 0b000 (binary)
+    // then invert the mode 111 (binary)
+    // then convert this to an integer 000...000111 (binary) of register width
+    // shift this by the appropriate amount (right now 3 bits per pin in a register)
+    // 000...111...000
+    // invert the whole thing and we end up with 111...000...111
+    // we can bitwise and this to the register to clear the mode of the given pin
+    // and prepare it for the set mode mask (which is bitwise or'd);
+    return (~(@intCast(peripherals.GpioRegister, ~@enumToInt(Mode.Input)) << @intCast(u5, (pin_bit_idx * @bitSizeOf(Mode)))));
+}
+
 const testing = std.testing;
+
+
+test "clearMask" {
+    comptime std.debug.assert(@bitSizeOf(peripherals.GpioRegister) == 32);
+    comptime std.debug.assert(@bitSizeOf(Mode) == 3);
+
+    try testing.expect(clearMask(0) == 0b11111111111111111111111111111000);
+    std.log.info("mode mask = {b}", .{modeMask(3, Mode.Input)});
+    try testing.expect(clearMask(3) == 0b11111111111111111111000111111111);
+    try testing.expect(clearMask(13) == 0b11111111111111111111000111111111);
+}
 
 test "modeMask" {
     // since the code below is manually verified for 32bit registers and 3bit function info
@@ -157,11 +175,12 @@ test "modeMask" {
     comptime std.debug.assert(@bitSizeOf(Mode) == 3);
 
     // see online hex editor, e.g. https://hexed.it/
-    try testing.expect(modeMask(0, Mode.Input) == ~@intCast(peripherals.GpioRegister, 7));
+    try testing.expect(modeMask(0, Mode.Input) == 0);
     std.log.info("mode mask = {b}", .{modeMask(3, Mode.Input)});
-    try testing.expect(modeMask(3, Mode.Input) == 0b11111111111111111111000111111111);
-    try testing.expect(modeMask(13, Mode.Input) == 0b11111111111111111111000111111111);
-    try testing.expect(modeMask(13, Mode.Output) == 0b11111111111111111111001111111111);
+                                                  
+    try testing.expect(modeMask(0, Mode.Output) == 0b00000000000000000000000000000001);
+    try testing.expect(modeMask(3, Mode.Output) == 0b00000000000000000000001000000000);
+    try testing.expect(modeMask(13, Mode.Alternate3) == 0b00000000000000000000111000000000);
 }
 
 test "gpioRegisterZeroIndex" {
