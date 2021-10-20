@@ -1,4 +1,4 @@
-name: test 
+name: tests 
 
 on: 
   push:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: test 
+    name: tests 
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -19,4 +19,3 @@ jobs:
           version: master
 
       - run: zig build test
-      
