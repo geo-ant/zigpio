@@ -19,3 +19,4 @@ jobs:
           version: master
 
       - run: zig build test
+      
