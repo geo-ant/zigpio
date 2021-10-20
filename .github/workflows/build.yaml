@@ -1,0 +1,21 @@
+name: build
+
+on: [push, pull_request]
+  # push:
+  #   branches: [ main ]
+  # pull_request:
+  #   branches: [ main ]
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        #with:
+        #  submodules: true
+      - uses: goto-bus-stop/setup-zig@v1
+        with:
+          version: master
+
+      - run: zig build
