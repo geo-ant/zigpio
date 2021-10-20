@@ -42,11 +42,8 @@ pub const Bcm2385GpioMemoryMapper = struct {
         const devgpiomem = try std.fs.openFileAbsolute("/dev/gpiomem", std.fs.File.OpenFlags{.read = true,.write = true});
         defer devgpiomem.close();
         
-        std.log.info("todo: remove hardcoded size",.{});
-
         return Self {
-            //TODO remove hardcoded size!!!!!!!!!!!
-            .devgpiomem =  try std.os.mmap(null, 0xB4, std.os.PROT.READ | std.os.PROT.WRITE, std.os.MAP.SHARED, devgpiomem.handle, 0),
+            .devgpiomem =  try std.os.mmap(null, BoardInfo.gpio_registers.len, std.os.PROT.READ | std.os.PROT.WRITE, std.os.MAP.SHARED, devgpiomem.handle, 0),
             .memory_mapper = .{.map_fn = Self.memoryMap}
         };
        
