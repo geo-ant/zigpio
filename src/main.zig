@@ -34,6 +34,8 @@ pub fn main() anyerror!void {
     const pin_number = 3;
     try gpio.setMode(pin_number, gpio.Mode.Output);
 
+    _ = try gpio.getMode(pin_number);
+
     var idx :u32 = 0;
     while (idx < 100) : (idx+=1) {
         std.log.info("idx {}", .{idx});

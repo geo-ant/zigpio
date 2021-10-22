@@ -34,6 +34,8 @@ pub const Error = error{
     Unitialized,
     /// Pin number out of range (or not available for this functionality)
     IllegalPinNumber,
+    /// a mode value that could not be recognized was read from the register
+    IllegalMode,
 };
 
 /// if initialized points to the memory block that is provided by the gpio
@@ -109,26 +111,45 @@ pub fn setMode(pin_number: u8, mode: Mode) !void {
 
     const gpfsel_register_zero = comptime gpioRegisterZeroIndex("gpfsel_registers", bcm2835.BoardInfo);
     const n: @TypeOf(pin_number) = @divTrunc(pin_number, pins_per_register);
-    
+
     // set the bits of the corresponding pins to zero so that we can bitwise or the correct mask to it below
     registers[gpfsel_register_zero + n] &= clearMask(pin_number); // use bitwise-& here
     registers[gpfsel_register_zero + n] |= modeMask(pin_number, mode); // use bitwise-| here TODO, this is dumb, rework the mode setting mask to not have the inverse!
 }
 
-// //TODO
-// pub fn getMode(pin_number : u8, mode : Mode) !Mode {
-//     //TODO: check if it is valid to read the mode!
-//     //we should be able to do some elegant comptime magic by extracting the mode from the register
-//     //shifting it and casting it into u3 and then INLINE FOR-ING through the enum variants
-//     //and comparing it to the variants in the enum. if none matches => error
-// }
+// read the mode of the given pin number
+pub fn getMode(pin_number : u8) !Mode {
+    var registers = g_gpio_registers orelse return Error.Unitialized;
+    if (pin_number > bcm2835.BoardInfo.NUM_GPIO_PINS) {
+        return Error.IllegalPinNumber;
+    }
 
-/// calculates the mask that needs to be shifted to the correct pin and
-/// bitwise anded to the register to set the desired mode for that pin
+    const pins_per_register = comptime @divTrunc(@bitSizeOf(peripherals.GpioRegister), @bitSizeOf(Mode));
+    const gpfsel_register_zero = comptime gpioRegisterZeroIndex("gpfsel_registers", bcm2835.BoardInfo);
+    const n: @TypeOf(pin_number) = @divTrunc(pin_number, pins_per_register);
+
+    const ModeIntType = (@typeInfo(Mode).Enum.tag_type);
+
+    const ones : peripherals.GpioRegister = std.math.maxInt(ModeIntType);
+    const shift_count = @intCast(u5,pin_number % pins_per_register);
+    const stencil_mask = ones << shift_count;
+    const mode_value = @intCast(ModeIntType, (registers[gpfsel_register_zero+n]&stencil_mask)>>shift_count);
+
+    inline for (std.meta.fields(Mode)) |mode| {
+        if(mode.value == mode_value) {
+            return @intToEnum(Mode, mode.value);
+        }
+    }
+
+    return Error.IllegalMode;
+}
+
+/// calculates that mask that sets the mode for a given pin in a GPFSEL register.
+/// ATTENTION: before this function is called, the clearMask must be applied to this register
 inline fn modeMask(pin_number: u8, mode: Mode) peripherals.GpioRegister {
+    // a 32 bit register can only hold 10 pins, because a pin function is set by an u3 value.
     const pins_per_register = comptime @divTrunc(@bitSizeOf(peripherals.GpioRegister), @bitSizeOf(Mode));
     const pin_bit_idx = pin_number % pins_per_register;
-
     // shift the mode to the correct bits for the pin. Mode mask 0...xxx...0
     return @intCast(peripherals.GpioRegister, @enumToInt(mode)) << @intCast(u5, (pin_bit_idx * @bitSizeOf(Mode)));
 }
@@ -138,12 +159,13 @@ fn gpioRegisterZeroIndex(comptime register_name: []const u8, board_info: anytype
 }
 
 /// make a binary mask for clearing the associated region of th GPFSET register
-inline fn clearMask(pin_number : u8) peripherals.GpioRegister {
+/// this mask can be binary-ANDed to the GPFSEL register to set the bits of the given pin to 0
+inline fn clearMask(pin_number: u8) peripherals.GpioRegister {
     const pins_per_register = comptime @divTrunc(@bitSizeOf(peripherals.GpioRegister), @bitSizeOf(Mode));
     const pin_bit_idx = pin_number % pins_per_register;
     // the input config should be zero
     // if it is, then the following logic will work
-    comptime std.debug.assert(@enumToInt(Mode.Input)==0);
+    comptime std.debug.assert(@enumToInt(Mode.Input) == 0);
     // convert the mode to a 3 bit integer: 0b000 (binary)
     // then invert the mode 111 (binary)
     // then convert this to an integer 000...000111 (binary) of register width
@@ -156,7 +178,6 @@ inline fn clearMask(pin_number : u8) peripherals.GpioRegister {
 }
 
 const testing = std.testing;
-
 
 test "clearMask" {
     comptime std.debug.assert(@bitSizeOf(peripherals.GpioRegister) == 32);
@@ -177,7 +198,7 @@ test "modeMask" {
     // see online hex editor, e.g. https://hexed.it/
     try testing.expect(modeMask(0, Mode.Input) == 0);
     std.log.info("mode mask = {b}", .{modeMask(3, Mode.Input)});
-                                                  
+
     try testing.expect(modeMask(0, Mode.Output) == 0b00000000000000000000000000000001);
     try testing.expect(modeMask(3, Mode.Output) == 0b00000000000000000000001000000000);
     try testing.expect(modeMask(13, Mode.Alternate3) == 0b00000000000000000000111000000000);
