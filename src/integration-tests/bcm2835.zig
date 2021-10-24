@@ -98,11 +98,34 @@ test "SetMode" {
     try std.testing.expectEqual(gpiomem.registerValue(5), 0); //gpfsel5
 
     try gpio.setMode(0, .Input);
-    try std.testing.expectEqual(gpiomem.registerValue(0), 0b0); 
+    try std.testing.expectEqual(gpiomem.registerValue(0), 0b0);
     try gpio.setMode(1, .Output);
-    try std.testing.expectEqual(gpiomem.registerValue(0), 0b001000); 
+    try std.testing.expectEqual(gpiomem.registerValue(0), 0b001000);
     try gpio.setMode(11, .Alternate1);
-    try std.testing.expectEqual(gpiomem.registerValue(1), 0b101000); 
+    try std.testing.expectEqual(gpiomem.registerValue(1), 0b101000);
     try gpio.setMode(50, .Alternate1);
-    try std.testing.expectEqual(gpiomem.registerValue(5), 0b101); 
+    try std.testing.expectEqual(gpiomem.registerValue(5), 0b101);
+}
+
+test "GetMode" {
+    std.testing.log_level = .debug;
+    var allocator = std.testing.allocator;
+    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.gpio_registers);
+    defer gpiomem.deinit();
+
+    try gpio.init(&gpiomem.memory_mapper);
+    defer gpio.deinit();
+    
+    try gpiomem.setRegisterValue(0, 0b00010000000000000000000000000101); //gpfsel 0
+    try gpiomem.setRegisterValue(1, 0b00000111000000000000000000011000); //gpfsel 1
+
+    try std.testing.expectEqual(gpio.Mode.Alternate1, try gpio.getMode(0));
+    try std.testing.expectEqual(gpio.Mode.Input, try gpio.getMode(1));
+    try std.testing.expectEqual(gpio.Mode.Alternate5, try gpio.getMode(9));
+    try std.testing.expectEqual(gpio.Mode.Input, try gpio.getMode(10));
+    try std.testing.expectEqual(gpio.Mode.Alternate4, try gpio.getMode(11));
+    try std.testing.expectEqual(gpio.Mode.Input, try gpio.getMode(12));
+    try std.testing.expectEqual(gpio.Mode.Input, try gpio.getMode(17));
+    try std.testing.expectEqual(gpio.Mode.Alternate3, try gpio.getMode(18));
+
 }

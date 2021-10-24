@@ -57,10 +57,7 @@ pub fn deinit() void {
 // write the given level to the pin
 pub fn setLevel(pin_number: u8, level: Level) !void {
     var registers = g_gpio_registers orelse return Error.Unitialized;
-
-    if (pin_number > bcm2835.BoardInfo.NUM_GPIO_PINS) {
-        return Error.IllegalPinNumber;
-    }
+    try checkPinNumber(pin_number, bcm2835.BoardInfo);
 
     // register offset to find the correct set or clear register depending on the level:
     // setting works by writing a 1 to the bit that corresponds to the pin in the appropriate GPSET{n} register
@@ -80,10 +77,7 @@ pub fn setLevel(pin_number: u8, level: Level) !void {
 
 pub fn getLevel(pin_number: u8) !Level {
     var registers = g_gpio_registers orelse return Error.Unitialized;
-
-    if (pin_number > bcm2835.BoardInfo.NUM_GPIO_PINS) {
-        return Error.IllegalPinNumber;
-    }
+    try checkPinNumber(pin_number, bcm2835.BoardInfo);
 
     const gplev_register_zero = comptime gpioRegisterZeroIndex("gplev_registers", bcm2835.BoardInfo);
     const pins_per_register = comptime @bitSizeOf(peripherals.GpioRegister);
@@ -100,9 +94,8 @@ pub fn getLevel(pin_number: u8) !Level {
 
 pub fn setMode(pin_number: u8, mode: Mode) !void {
     var registers = g_gpio_registers orelse return Error.Unitialized;
-    if (pin_number > bcm2835.BoardInfo.NUM_GPIO_PINS) {
-        return Error.IllegalPinNumber;
-    }
+    try checkPinNumber(pin_number, bcm2835.BoardInfo);
+
     // a series of @bitSizeOf(Mode) is necessary to encapsulate the function of one pin
     // this is why we have to calculate the amount of pins that fit into a register by dividing
     // the number of bits in the register by the number of bits for the function
@@ -118,11 +111,9 @@ pub fn setMode(pin_number: u8, mode: Mode) !void {
 }
 
 // read the mode of the given pin number
-pub fn getMode(pin_number : u8) !Mode {
+pub fn getMode(pin_number: u8) !Mode {
     var registers = g_gpio_registers orelse return Error.Unitialized;
-    if (pin_number > bcm2835.BoardInfo.NUM_GPIO_PINS) {
-        return Error.IllegalPinNumber;
-    }
+    try checkPinNumber(pin_number, bcm2835.BoardInfo);
 
     const pins_per_register = comptime @divTrunc(@bitSizeOf(peripherals.GpioRegister), @bitSizeOf(Mode));
     const gpfsel_register_zero = comptime gpioRegisterZeroIndex("gpfsel_registers", bcm2835.BoardInfo);
@@ -130,13 +121,13 @@ pub fn getMode(pin_number : u8) !Mode {
 
     const ModeIntType = (@typeInfo(Mode).Enum.tag_type);
 
-    const ones : peripherals.GpioRegister = std.math.maxInt(ModeIntType);
-    const shift_count = @intCast(u5,pin_number % pins_per_register);
+    const ones: peripherals.GpioRegister = std.math.maxInt(ModeIntType);
+    const shift_count = @bitSizeOf(Mode)*@intCast(u5, pin_number % pins_per_register);
     const stencil_mask = ones << shift_count;
-    const mode_value = @intCast(ModeIntType, (registers[gpfsel_register_zero+n]&stencil_mask)>>shift_count);
+    const mode_value = @intCast(ModeIntType, (registers[gpfsel_register_zero + n] & stencil_mask) >> shift_count);
 
     inline for (std.meta.fields(Mode)) |mode| {
-        if(mode.value == mode_value) {
+        if (mode.value == mode_value) {
             return @intToEnum(Mode, mode.value);
         }
     }
@@ -156,6 +147,20 @@ inline fn modeMask(pin_number: u8, mode: Mode) peripherals.GpioRegister {
 
 fn gpioRegisterZeroIndex(comptime register_name: []const u8, board_info: anytype) comptime_int {
     return comptime std.math.divExact(comptime_int, @field(board_info, register_name).start - board_info.gpio_registers.start, @sizeOf(peripherals.GpioRegister)) catch @compileError("Offset not evenly divisible by register width");
+}
+
+/// just a helper function that returns an error iff the given pin number is illegal
+/// the board info type must carry a NUM_GPIO_PINS member field indicating the number of gpio pins
+inline fn checkPinNumber(pin_number: u8, comptime BoardInfo: type) !void {
+    if (@hasDecl(BoardInfo, "NUM_GPIO_PINS")) {
+        if (pin_number < BoardInfo.NUM_GPIO_PINS) {
+            return;
+        } else {
+            return Error.IllegalPinNumber;
+        }
+    } else {
+        @compileError("BoardInfo type must have a constant field NUM_GPIO_PINS indicating the number of gpio pins");
+    }
 }
 
 /// make a binary mask for clearing the associated region of th GPFSET register
@@ -214,4 +219,19 @@ test "gpioRegisterZeroIndex" {
     try testing.expectEqual(7, gpioRegisterZeroIndex("gpset_registers", board_info));
     try testing.expectEqual(10, gpioRegisterZeroIndex("gpclr_registers", board_info));
     try testing.expectEqual(13, gpioRegisterZeroIndex("gplev_registers", board_info));
+}
+
+test "checkPinNumber" {
+    const MyBoardInfo = struct {
+        pub const NUM_GPIO_PINS: u8 = 20;
+    };
+
+    var pin: u8 = 0;
+    while (pin < MyBoardInfo.NUM_GPIO_PINS) : (pin += 1) {
+        try checkPinNumber(pin, MyBoardInfo);
+    }
+
+    while (pin < 2 * MyBoardInfo.NUM_GPIO_PINS) : (pin += 1) {
+        try testing.expectError(Error.IllegalPinNumber, checkPinNumber(pin, MyBoardInfo));
+    }
 }
