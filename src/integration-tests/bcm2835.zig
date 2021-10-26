@@ -115,7 +115,7 @@ test "GetMode" {
 
     try gpio.init(&gpiomem.memory_mapper);
     defer gpio.deinit();
-    
+
     try gpiomem.setRegisterValue(0, 0b00010000000000000000000000000101); //gpfsel 0
     try gpiomem.setRegisterValue(1, 0b00000111000000000000000000011000); //gpfsel 1
 
@@ -127,5 +127,4 @@ test "GetMode" {
     try std.testing.expectEqual(gpio.Mode.Input, try gpio.getMode(12));
     try std.testing.expectEqual(gpio.Mode.Input, try gpio.getMode(17));
     try std.testing.expectEqual(gpio.Mode.Alternate3, try gpio.getMode(18));
-
 }

@@ -29,6 +29,13 @@ pub const Mode = enum(u3) {
     Alternate5 = 0b010,
 };
 
+pub const PullMode = enum(u2) {
+    Off = 0b00,
+    PullDown = 0b01,
+    PullUp = 0b10
+    // binary 11 = reserved
+};
+
 pub const Error = error{
     /// not initialized
     Unitialized,
@@ -76,23 +83,17 @@ pub fn setLevel(pin_number: u8, level: Level) !void {
 }
 
 pub fn getLevel(pin_number: u8) !Level {
-    var registers = g_gpio_registers orelse return Error.Unitialized;
-    try checkPinNumber(pin_number, bcm2835.BoardInfo);
-
     const gplev_register_zero = comptime gpioRegisterZeroIndex("gplev_registers", bcm2835.BoardInfo);
-    const pins_per_register = comptime @bitSizeOf(peripherals.GpioRegister);
-    const n = @divTrunc(pin_number, pins_per_register);
-    const pin_shift = @intCast(u5, pin_number % pins_per_register);
-
-    const pin_value = registers[gplev_register_zero + n] & (@intCast(peripherals.GpioRegister, 1) << pin_shift);
-    if (pin_value == 0) {
+    
+    const bit : u1 = try getPinSingleBit(g_gpio_registers,.{.register_zero = gplev_register_zero, .pin_number = pin_number});
+    if(bit == 0) {
         return .Low;
     } else {
         return .High;
     }
 }
 
-pub fn setMode(pin_number: u8, mode: Mode) !void {
+pub fn setMode(pin_number: u8, mode: Mode) Error!void {
     var registers = g_gpio_registers orelse return Error.Unitialized;
     try checkPinNumber(pin_number, bcm2835.BoardInfo);
 
@@ -133,6 +134,36 @@ pub fn getMode(pin_number: u8) !Mode {
     }
 
     return Error.IllegalMode;
+}
+
+pub fn setPull(pin_number : u8, mode : PullMode) Error!void {
+    _ = pin_number;
+    _ = mode;
+}
+
+const PinAndRegister = struct {
+    pin_number : u8,
+    register_zero : u8,
+};
+
+/// helper function for simplifying working with those contiguous registers where one GPIO bin is represented by one bit
+/// needs the zero register for the set and the pin number and returns the bit (or an error)
+inline fn getPinSingleBit(gpio_registers: ?peripherals.GpioRegisterMemory, pin_and_register : PinAndRegister) !u1 {
+    var registers = gpio_registers orelse return Error.Unitialized;
+    const pin_number = pin_and_register.pin_number;
+    const register_zero = pin_and_register.register_zero;
+    try checkPinNumber(pin_number, bcm2835.BoardInfo);
+    
+    const pins_per_register = comptime @bitSizeOf(peripherals.GpioRegister);
+    const n = @divTrunc(pin_number, pins_per_register);
+    const pin_shift = @intCast(u5, pin_number % pins_per_register);
+
+    const pin_value = registers[register_zero+n] & (@intCast(peripherals.GpioRegister, 1) << pin_shift);
+    if (pin_value == 0) {
+        return 0;
+    } else {
+        return 1;
+    }
 }
 
 /// calculates that mask that sets the mode for a given pin in a GPFSEL register.
@@ -234,4 +265,9 @@ test "checkPinNumber" {
     while (pin < 2 * MyBoardInfo.NUM_GPIO_PINS) : (pin += 1) {
         try testing.expectError(Error.IllegalPinNumber, checkPinNumber(pin, MyBoardInfo));
     }
+}
+
+test "getPinSingleBit" {
+    // TODO implement test
+    try std.testing.expect(false);
 }
