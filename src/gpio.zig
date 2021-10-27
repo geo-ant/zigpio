@@ -29,16 +29,13 @@ pub const Mode = enum(u3) {
     Alternate5 = 0b010,
 };
 
-pub const PullMode = enum(u2) {
-    Off = 0b00,
-    PullDown = 0b01,
-    PullUp = 0b10
-    // binary 11 = reserved
+pub const PullMode = enum(u2) { Off = 0b00, PullDown = 0b01, PullUp = 0b10
+// binary 11 = reserved
 };
 
 pub const Error = error{
     /// not initialized
-    Unitialized,
+    Uninitialized,
     /// Pin number out of range (or not available for this functionality)
     IllegalPinNumber,
     /// a mode value that could not be recognized was read from the register
@@ -48,6 +45,8 @@ pub const Error = error{
 /// if initialized points to the memory block that is provided by the gpio
 /// memory mapping interface
 var g_gpio_registers: ?peripherals.GpioRegisterMemory = null;
+
+var is_init: bool = false;
 
 /// initialize the GPIO control with the given memory mapping
 pub fn init(memory_interface: *peripherals.GpioMemMapper) !void {
@@ -63,30 +62,25 @@ pub fn deinit() void {
 
 // write the given level to the pin
 pub fn setLevel(pin_number: u8, level: Level) !void {
-    var registers = g_gpio_registers orelse return Error.Unitialized;
     try checkPinNumber(pin_number, bcm2835.BoardInfo);
 
     // register offset to find the correct set or clear register depending on the level:
     // setting works by writing a 1 to the bit that corresponds to the pin in the appropriate GPSET{n} register
     // and clearing works by writing a 1 to the bit that corresponds to the pin in the appropriate GPCLR{n} register
     // writing a 0 to those registers doesn't do anything
-    const register_zero: usize = switch (level) {
+    const register_zero: u8 = switch (level) {
         .High => comptime gpioRegisterZeroIndex("gpset_registers", bcm2835.BoardInfo), // "set" GPSET{n} registers
         .Low => comptime gpioRegisterZeroIndex("gpclr_registers", bcm2835.BoardInfo), // "clear" GPCLR{n} registers
     };
-    // which of the Set{n} (n=0,1) or GET{n}registers to use depends on which pin needs to be set#
-    // because each of these registers hold 32 pins at most (the last one actually holds less)
-    const pins_per_register = comptime @bitSizeOf(peripherals.GpioRegister);
-    const n = @divTrunc(pin_number, pins_per_register);
-    const pin_shift = @intCast(u5, pin_number % pins_per_register);
-    registers[register_zero + n] |= (@intCast(peripherals.GpioRegister, 1) << pin_shift);
+
+    try setPinSingleBit(g_gpio_registers,.{.pin_number = pin_number, .register_zero = register_zero},1);
 }
 
 pub fn getLevel(pin_number: u8) !Level {
     const gplev_register_zero = comptime gpioRegisterZeroIndex("gplev_registers", bcm2835.BoardInfo);
-    
-    const bit : u1 = try getPinSingleBit(g_gpio_registers,.{.register_zero = gplev_register_zero, .pin_number = pin_number});
-    if(bit == 0) {
+
+    const bit: u1 = try getPinSingleBit(g_gpio_registers, .{ .register_zero = gplev_register_zero, .pin_number = pin_number });
+    if (bit == 0) {
         return .Low;
     } else {
         return .High;
@@ -94,7 +88,7 @@ pub fn getLevel(pin_number: u8) !Level {
 }
 
 pub fn setMode(pin_number: u8, mode: Mode) Error!void {
-    var registers = g_gpio_registers orelse return Error.Unitialized;
+    var registers = g_gpio_registers orelse return Error.Uninitialized;
     try checkPinNumber(pin_number, bcm2835.BoardInfo);
 
     // a series of @bitSizeOf(Mode) is necessary to encapsulate the function of one pin
@@ -113,7 +107,7 @@ pub fn setMode(pin_number: u8, mode: Mode) Error!void {
 
 // read the mode of the given pin number
 pub fn getMode(pin_number: u8) !Mode {
-    var registers = g_gpio_registers orelse return Error.Unitialized;
+    var registers = g_gpio_registers orelse return Error.Uninitialized;
     try checkPinNumber(pin_number, bcm2835.BoardInfo);
 
     const pins_per_register = comptime @divTrunc(@bitSizeOf(peripherals.GpioRegister), @bitSizeOf(Mode));
@@ -123,7 +117,7 @@ pub fn getMode(pin_number: u8) !Mode {
     const ModeIntType = (@typeInfo(Mode).Enum.tag_type);
 
     const ones: peripherals.GpioRegister = std.math.maxInt(ModeIntType);
-    const shift_count = @bitSizeOf(Mode)*@intCast(u5, pin_number % pins_per_register);
+    const shift_count = @bitSizeOf(Mode) * @intCast(u5, pin_number % pins_per_register);
     const stencil_mask = ones << shift_count;
     const mode_value = @intCast(ModeIntType, (registers[gpfsel_register_zero + n] & stencil_mask) >> shift_count);
 
@@ -136,33 +130,51 @@ pub fn getMode(pin_number: u8) !Mode {
     return Error.IllegalMode;
 }
 
-pub fn setPull(pin_number : u8, mode : PullMode) Error!void {
+pub fn setPull(pin_number: u8, mode: PullMode) Error!void {
     _ = pin_number;
     _ = mode;
 }
 
 const PinAndRegister = struct {
-    pin_number : u8,
-    register_zero : u8,
+    pin_number: u8,
+    register_zero: u8,
 };
 
 /// helper function for simplifying working with those contiguous registers where one GPIO bin is represented by one bit
 /// needs the zero register for the set and the pin number and returns the bit (or an error)
-inline fn getPinSingleBit(gpio_registers: ?peripherals.GpioRegisterMemory, pin_and_register : PinAndRegister) !u1 {
-    var registers = gpio_registers orelse return Error.Unitialized;
+inline fn getPinSingleBit(gpio_registers: ?peripherals.GpioRegisterMemory, pin_and_register: PinAndRegister) !u1 {
+    var registers = gpio_registers orelse return Error.Uninitialized;
     const pin_number = pin_and_register.pin_number;
     const register_zero = pin_and_register.register_zero;
     try checkPinNumber(pin_number, bcm2835.BoardInfo);
-    
+
     const pins_per_register = comptime @bitSizeOf(peripherals.GpioRegister);
     const n = @divTrunc(pin_number, pins_per_register);
     const pin_shift = @intCast(u5, pin_number % pins_per_register);
 
-    const pin_value = registers[register_zero+n] & (@intCast(peripherals.GpioRegister, 1) << pin_shift);
+    const pin_value = registers[register_zero + n] & (@intCast(peripherals.GpioRegister, 1) << pin_shift);
     if (pin_value == 0) {
         return 0;
     } else {
         return 1;
+    }
+}
+
+/// helper function for simplifying the work with those contiguous registers where one GPIO pin is represented by one bit
+/// this function sets the respective bit to the given value
+inline fn setPinSingleBit(gpio_registers: ?peripherals.GpioRegisterMemory, pin_and_register: PinAndRegister, comptime value_to_set: u1) !void {
+    var registers = gpio_registers orelse return Error.Uninitialized;
+    const pin_number = pin_and_register.pin_number;
+    const register_zero = pin_and_register.register_zero;
+    try checkPinNumber(pin_number, bcm2835.BoardInfo);
+
+    const pins_per_register = comptime @bitSizeOf(peripherals.GpioRegister);
+    const n = @divTrunc(pin_number, pins_per_register);
+    const pin_shift = @intCast(u5, pin_number % pins_per_register);
+    if (value_to_set == 1) {
+        registers[register_zero + n] |= (@intCast(peripherals.GpioRegister, 1) << pin_shift);
+    } else {
+        registers[register_zero + n] &= ~(@intCast(peripherals.GpioRegister, 1) << pin_shift);
     }
 }
 
@@ -268,6 +280,33 @@ test "checkPinNumber" {
 }
 
 test "getPinSingleBit" {
-    // TODO implement test
-    try std.testing.expect(false);
+    try std.testing.expectError(Error.Uninitialized, getPinSingleBit(null, .{ .pin_number = 1, .register_zero = 0 }));
+
+    var three_registers = [3]peripherals.GpioRegister{ std.math.maxInt(peripherals.GpioRegister), 3, 5 };
+    try std.testing.expectEqual(@intCast(u1, 1), try getPinSingleBit(&three_registers, .{ .pin_number = 0, .register_zero = 1 }));
+    try std.testing.expectEqual(@intCast(u1, 1), try getPinSingleBit(&three_registers, .{ .pin_number = 1, .register_zero = 1 }));
+    try std.testing.expectEqual(@intCast(u1, 0), try getPinSingleBit(&three_registers, .{ .pin_number = 2, .register_zero = 1 }));
+    try std.testing.expectEqual(@intCast(u1, 1), try getPinSingleBit(&three_registers, .{ .pin_number = 32 + 0, .register_zero = 1 }));
+    try std.testing.expectEqual(@intCast(u1, 0), try getPinSingleBit(&three_registers, .{ .pin_number = 32 + 1, .register_zero = 1 }));
+    try std.testing.expectEqual(@intCast(u1, 1), try getPinSingleBit(&three_registers, .{ .pin_number = 32 + 2, .register_zero = 1 }));
+}
+
+test "setPinSingleBit" {
+    var three_registers = [3]peripherals.GpioRegister{ 0, 0, 0 };
+    // try setting bits
+    try setPinSingleBit(&three_registers, .{ .pin_number = 0, .register_zero = 1 }, 1);
+    try setPinSingleBit(&three_registers, .{ .pin_number = 1, .register_zero = 1 }, 1);
+    try setPinSingleBit(&three_registers, .{ .pin_number = 3, .register_zero = 1 }, 1);
+    try setPinSingleBit(&three_registers, .{ .pin_number = 32+2, .register_zero = 1 }, 1);
+    // and then also unset bits that are zero anyways (these should have no influence on the values)
+    try setPinSingleBit(&three_registers, .{ .pin_number = 32+3, .register_zero = 1 }, 0);
+    try setPinSingleBit(&three_registers, .{ .pin_number = 2, .register_zero = 1 }, 0);
+    try std.testing.expectEqual(@intCast(peripherals.GpioRegister, 0), three_registers[0]);
+    try std.testing.expectEqual(@intCast(peripherals.GpioRegister, 1 + 2 + 8), three_registers[1]);
+    try std.testing.expectEqual(@intCast(peripherals.GpioRegister, 4 ), three_registers[2]);
+    // now unset a bit
+    try setPinSingleBit(&three_registers, .{ .pin_number = 1, .register_zero = 1 }, 0);
+    try std.testing.expectEqual(@intCast(peripherals.GpioRegister, 0), three_registers[0]);
+    try std.testing.expectEqual(@intCast(peripherals.GpioRegister, 1 + 0 + 8), three_registers[1]);
+    try std.testing.expectEqual(@intCast(peripherals.GpioRegister, 4 ), three_registers[2]); 
 }
