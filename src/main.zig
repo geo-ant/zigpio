@@ -27,7 +27,7 @@ pub fn main() anyerror!void {
 
     var mapper = try bcm2835.Bcm2385GpioMemoryMapper.init();
     defer mapper.deinit();
-    
+
     try gpio.init(&mapper.memory_mapper);
 
     //try setAllPinModes(.Output);
@@ -36,29 +36,29 @@ pub fn main() anyerror!void {
 
     _ = try gpio.getMode(pin_number);
 
-    var idx :u32 = 0;
-    while (idx < 100) : (idx+=1) {
+    var idx: u32 = 0;
+    while (idx < 100) : (idx += 1) {
         std.log.info("idx {}", .{idx});
-        std.log.info("set pin to high",.{});
-        try gpio.setLevel(pin_number,.High);
+        std.log.info("set pin to high", .{});
+        try gpio.setLevel(pin_number, .High);
         std.time.sleep(500000000); //500ms
-        std.log.info("set pin to low",.{});
-        try gpio.setLevel(pin_number,.Low);
+        std.log.info("set pin to low", .{});
+        try gpio.setLevel(pin_number, .Low);
         std.time.sleep(500000000); //500ms
     }
 }
 
 fn setAllPinLevels(level: gpio.Level) !void {
-    var pin :u8 = 0;
+    var pin: u8 = 0;
     while (pin < bcm2835.BoardInfo.NUM_GPIO_PINS) : (pin += 1) {
-        try gpio.setLevel(pin, level); 
+        try gpio.setLevel(pin, level);
     }
 }
 
 fn setAllPinModes(mode: gpio.Mode) !void {
-    var pin :u8 = 0;
+    var pin: u8 = 0;
     while (pin < bcm2835.BoardInfo.NUM_GPIO_PINS) : (pin += 1) {
         std.log.info("Setting mode for pin {}", .{pin});
-        try gpio.setMode(pin, mode); 
+        try gpio.setMode(pin, mode);
     }
 }

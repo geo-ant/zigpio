@@ -73,7 +73,7 @@ pub fn setLevel(pin_number: u8, level: Level) !void {
         .Low => comptime gpioRegisterZeroIndex("gpclr_registers", bcm2835.BoardInfo), // "clear" GPCLR{n} registers
     };
 
-    try setPinSingleBit(g_gpio_registers,.{.pin_number = pin_number, .register_zero = register_zero},1);
+    try setPinSingleBit(g_gpio_registers, .{ .pin_number = pin_number, .register_zero = register_zero }, 1);
 }
 
 pub fn getLevel(pin_number: u8) !Level {
@@ -86,7 +86,7 @@ pub fn getLevel(pin_number: u8) !Level {
         return .High;
     }
 }
-
+// set the mode for the given pin.
 pub fn setMode(pin_number: u8, mode: Mode) Error!void {
     var registers = g_gpio_registers orelse return Error.Uninitialized;
     try checkPinNumber(pin_number, bcm2835.BoardInfo);
@@ -297,16 +297,16 @@ test "setPinSingleBit" {
     try setPinSingleBit(&three_registers, .{ .pin_number = 0, .register_zero = 1 }, 1);
     try setPinSingleBit(&three_registers, .{ .pin_number = 1, .register_zero = 1 }, 1);
     try setPinSingleBit(&three_registers, .{ .pin_number = 3, .register_zero = 1 }, 1);
-    try setPinSingleBit(&three_registers, .{ .pin_number = 32+2, .register_zero = 1 }, 1);
+    try setPinSingleBit(&three_registers, .{ .pin_number = 32 + 2, .register_zero = 1 }, 1);
     // and then also unset bits that are zero anyways (these should have no influence on the values)
-    try setPinSingleBit(&three_registers, .{ .pin_number = 32+3, .register_zero = 1 }, 0);
+    try setPinSingleBit(&three_registers, .{ .pin_number = 32 + 3, .register_zero = 1 }, 0);
     try setPinSingleBit(&three_registers, .{ .pin_number = 2, .register_zero = 1 }, 0);
     try std.testing.expectEqual(@intCast(peripherals.GpioRegister, 0), three_registers[0]);
     try std.testing.expectEqual(@intCast(peripherals.GpioRegister, 1 + 2 + 8), three_registers[1]);
-    try std.testing.expectEqual(@intCast(peripherals.GpioRegister, 4 ), three_registers[2]);
+    try std.testing.expectEqual(@intCast(peripherals.GpioRegister, 4), three_registers[2]);
     // now unset a bit
     try setPinSingleBit(&three_registers, .{ .pin_number = 1, .register_zero = 1 }, 0);
     try std.testing.expectEqual(@intCast(peripherals.GpioRegister, 0), three_registers[0]);
     try std.testing.expectEqual(@intCast(peripherals.GpioRegister, 1 + 0 + 8), three_registers[1]);
-    try std.testing.expectEqual(@intCast(peripherals.GpioRegister, 4 ), three_registers[2]); 
+    try std.testing.expectEqual(@intCast(peripherals.GpioRegister, 4), three_registers[2]);
 }
