@@ -128,3 +128,16 @@ test "GetMode" {
     try std.testing.expectEqual(gpio.Mode.Input, try gpio.getMode(17));
     try std.testing.expectEqual(gpio.Mode.Alternate3, try gpio.getMode(18));
 }
+
+test "setPull" {
+    std.testing.log_level = .debug;
+    var allocator = std.testing.allocator;
+    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.gpio_registers);
+    defer gpiomem.deinit();
+
+    try gpio.init(&gpiomem.memory_mapper);
+    defer gpio.deinit();
+    // unfortunately we can just smoke test this one here, because the register values
+    // will be set and unset in this function.
+    try gpio.setPull(2, .PullDown);
+}

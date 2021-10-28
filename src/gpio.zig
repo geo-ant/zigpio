@@ -29,9 +29,7 @@ pub const Mode = enum(u3) {
     Alternate5 = 0b010,
 };
 
-pub const PullMode = enum(u2) { Off = 0b00, PullDown = 0b01, PullUp = 0b10
-// binary 11 = reserved
-};
+pub const PullMode = enum(u2) { Off = 0b00, PullDown = 0b01, PullUp = 0b10 };
 
 pub const Error = error{
     /// not initialized
@@ -131,8 +129,23 @@ pub fn getMode(pin_number: u8) !Mode {
 }
 
 pub fn setPull(pin_number: u8, mode: PullMode) Error!void {
-    _ = pin_number;
-    _ = mode;
+    var registers = g_gpio_registers orelse return Error.Uninitialized;
+
+    // see the GPPUCLK register description for how to set the pull up or pull down on a per pin basis
+    const gppud_register_zero = comptime gpioRegisterZeroIndex("gppud_register", bcm2835.BoardInfo);
+    const gppudclk_register_zero = comptime gpioRegisterZeroIndex("gppudclk_registers", bcm2835.BoardInfo);
+    const ten_us_in_ns = 10 * 1000;
+    registers[gppud_register_zero] = @enumToInt(mode);
+    // TODO this may be janky, because no precision of timing is guaranteed
+    // however, the manual only states that we have to wait 150 clock cycles
+    // and we are being very generous here
+    std.os.nanosleep(0, ten_us_in_ns);
+
+    try setPinSingleBit(registers, .{ .pin_number = pin_number, .register_zero = gppudclk_register_zero }, 1);
+
+    std.os.nanosleep(0, ten_us_in_ns);
+    registers[gppud_register_zero] = @enumToInt(PullMode.Off);
+    try setPinSingleBit(registers, .{ .pin_number = pin_number, .register_zero = gppudclk_register_zero }, 0);
 }
 
 const PinAndRegister = struct {
