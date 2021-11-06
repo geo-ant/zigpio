@@ -67,22 +67,9 @@ pub const Error = error{
 /// memory mapping interface
 var g_gpio_registers: ?peripherals.GpioRegisterMemory = null;
 
-/// a callback function for event detection. This function will
-/// be called from the event detection thread and 
-var event_detection_callback : ?fn (pin_numbers: []const u8) void = null;
-
-/// whether the event detection thread should shut down
-var event_detection_thread_shutdown_request: std.atomic.Atomic(bool) = std.atomic.Atomic(bool).init(false);
-
-/// if it exists, a handle for the event detection thread
-var event_detection_thread: ?std.Thread = null;
-/// condition variable that notifies the waiting event detection thread once a callback function for event detection is set.
-var event_detection_function_set_condvar :std.Thread.Condition = std.Thread.Condition{};
-
 /// initialize the GPIO control with the given memory mapping
 pub fn init(memory_interface: *peripherals.GpioMemMapper) !void {
     g_gpio_registers = try memory_interface.memoryMap();
-    event_detection_thread = try std.Thread.spawn(.{},detectionThreadLoop,.{});
 }
 
 /// deinitialize
@@ -90,12 +77,6 @@ pub fn init(memory_interface: *peripherals.GpioMemMapper) !void {
 /// it will perform some cleanup for the internals of this implementation
 pub fn deinit() void {
     g_gpio_registers = null;
-    if (event_detection_thread) |thread| {
-        event_detection_thread_shutdown_request.store(true, .SeqCst);
-        thread.join();
-        event_detection_callback = null;
-        event_detection_thread = null;
-    }
 }
 
 /// write the given level to the pin
@@ -214,27 +195,6 @@ pub fn setDetectionMode(pin_number: u8, mode: Detection) !void {
     if (mode.falling) |enable_falling| {
         try Lambda.setBit(pin_number, "GPFEN", enable_falling);
     }
-}
-
-/// set the callback function for event detection. Once this is function is called once,
-/// calling it again will produce an error, if deinit() was not called previously
-pub fn initDetectionCallback(callback : fn(pin_numbers : []const u8)void) !void {
-    if(event_detection_callback!=null) {
-        return Error.DectionCallbackAlreadySet;
-    }
-    _ = callback;
-    event_detection_callback = callback;
-    event_detection_function_set_condvar.signal();
-}
-
-/// the main loop of the detection thread that checks periodically if a detection event occurred
-fn detectionThreadLoop() void {
-    // although it is spawned on initialization, this thread is 
-    // dormant until it is signalled via the condition variable
-    var mtx = std.Thread.Mutex{};
-    const held = mtx.acquire();
-    event_detection_function_set_condvar.wait(&mtx);
-    held.release();
 }
 
 const PinAndRegister = struct {
