@@ -7,7 +7,7 @@ const peripherals = @import("../peripherals.zig");
 test "SetLevel - High" {
     std.testing.log_level = .debug;
     var allocator = std.testing.allocator;
-    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.gpio_registers);
+    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.NUM_GPIO_REGISTERS);
     defer gpiomem.deinit();
 
     try gpio.init(&gpiomem.memory_mapper);
@@ -33,7 +33,7 @@ test "SetLevel - High" {
 test "SetLevel - Low" {
     std.testing.log_level = .debug;
     var allocator = std.testing.allocator;
-    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.gpio_registers);
+    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.NUM_GPIO_REGISTERS);
     defer gpiomem.deinit();
 
     try gpio.init(&gpiomem.memory_mapper);
@@ -56,7 +56,7 @@ test "SetLevel - Low" {
 test "GetLevel" {
     std.testing.log_level = .debug;
     var allocator = std.testing.allocator;
-    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.gpio_registers);
+    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.NUM_GPIO_REGISTERS);
     defer gpiomem.deinit();
 
     try gpio.init(&gpiomem.memory_mapper);
@@ -87,7 +87,7 @@ test "GetLevel" {
 test "SetMode" {
     std.testing.log_level = .debug;
     var allocator = std.testing.allocator;
-    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.gpio_registers);
+    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.NUM_GPIO_REGISTERS);
     defer gpiomem.deinit();
 
     try gpio.init(&gpiomem.memory_mapper);
@@ -110,7 +110,7 @@ test "SetMode" {
 test "GetMode" {
     std.testing.log_level = .debug;
     var allocator = std.testing.allocator;
-    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.gpio_registers);
+    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.NUM_GPIO_REGISTERS);
     defer gpiomem.deinit();
 
     try gpio.init(&gpiomem.memory_mapper);
@@ -132,7 +132,7 @@ test "GetMode" {
 test "setPull" {
     std.testing.log_level = .debug;
     var allocator = std.testing.allocator;
-    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.gpio_registers);
+    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.NUM_GPIO_REGISTERS);
     defer gpiomem.deinit();
 
     try gpio.init(&gpiomem.memory_mapper);
@@ -140,4 +140,35 @@ test "setPull" {
     // unfortunately we can just smoke test this one here, because the register values
     // will be set and unset in this function.
     try gpio.setPull(2, .PullDown);
+}
+
+test "setDetectionMode" {
+    std.testing.log_level = .debug;
+    var allocator = std.testing.allocator;
+    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.NUM_GPIO_REGISTERS);
+    defer gpiomem.deinit();
+
+    try gpio.init(&gpiomem.memory_mapper);
+    defer gpio.deinit();
+
+    // enable all detections for pin 0
+    try gpio.setDetectionMode(0, .{ .high = true, .low = true, .rising = true, .falling = true });
+    try std.testing.expectEqual(@as(u32, 0b1), gpiomem.registerValue(19));
+    try std.testing.expectEqual(@as(u32, 0b1), gpiomem.registerValue(22));
+    try std.testing.expectEqual(@as(u32, 0b1), gpiomem.registerValue(25));
+    try std.testing.expectEqual(@as(u32, 0b1), gpiomem.registerValue(28));
+
+    // disable some detections for pin 0, but leave others untouched
+    try gpio.setDetectionMode(0,.{.rising = false, .falling = false});
+    try std.testing.expectEqual(@as(u32, 0b0), gpiomem.registerValue(19));
+    try std.testing.expectEqual(@as(u32, 0b0), gpiomem.registerValue(22));
+    try std.testing.expectEqual(@as(u32, 0b1), gpiomem.registerValue(25));
+    try std.testing.expectEqual(@as(u32, 0b1), gpiomem.registerValue(28));
+
+    // enable some things on a different register
+    try gpio.setDetectionMode(32+1, .{ .high = true, .low = true} );
+    try std.testing.expectEqual(@as(u32, 0), gpiomem.registerValue(20));
+    try std.testing.expectEqual(@as(u32, 0), gpiomem.registerValue(23));
+    try std.testing.expectEqual(@as(u32, 0b10), gpiomem.registerValue(26));
+    try std.testing.expectEqual(@as(u32, 0b10), gpiomem.registerValue(29));
 }

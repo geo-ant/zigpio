@@ -29,8 +29,29 @@ pub const Mode = enum(u3) {
     Alternate5 = 0b010,
 };
 
-pub const PullMode = enum(u2) { Off = 0b00, PullDown = 0b01, PullUp = 0b10 };
+/// describe the pull up / pull down mode for a given pin
+pub const PullMode = enum(u2) {
+    /// turn off the pull up or pull down line
+    Off = 0b00,
+    /// enable pull down
+    PullDown = 0b01,
+    /// enable pull up
+    PullUp = 0b10,
+};
 
+/// Detection settings for a pin. The given values are optional bools. If 
+/// null is given, then the value is left unchanged compared to the current setting
+pub const Detection = struct {
+    /// detect high
+    high: ?bool = null,
+    /// detect low
+    low: ?bool = null,
+    /// detect rising edge (synchronous)
+    rising: ?bool = null,
+    /// detect falling edge (synchronous)
+    falling: ?bool = null,
+};
+/// error types
 pub const Error = error{
     /// not initialized
     Uninitialized,
@@ -38,17 +59,30 @@ pub const Error = error{
     IllegalPinNumber,
     /// a mode value that could not be recognized was read from the register
     IllegalMode,
+    /// event detection callback had already been set
+    DectionCallbackAlreadySet,
 };
 
 /// if initialized points to the memory block that is provided by the gpio
 /// memory mapping interface
 var g_gpio_registers: ?peripherals.GpioRegisterMemory = null;
 
-var is_init: bool = false;
+/// a callback function for event detection. This function will
+/// be called from the event detection thread and 
+var event_detection_callback : ?fn (pin_numbers: []const u8) void = null;
+
+/// whether the event detection thread should shut down
+var event_detection_thread_shutdown_request: std.atomic.Atomic(bool) = std.atomic.Atomic(bool).init(false);
+
+/// if it exists, a handle for the event detection thread
+var event_detection_thread: ?std.Thread = null;
+/// condition variable that notifies the waiting event detection thread once a callback function for event detection is set.
+var event_detection_function_set_condvar :std.Thread.Condition = std.Thread.Condition{};
 
 /// initialize the GPIO control with the given memory mapping
 pub fn init(memory_interface: *peripherals.GpioMemMapper) !void {
     g_gpio_registers = try memory_interface.memoryMap();
+    event_detection_thread = try std.Thread.spawn(.{},detectionThreadLoop,.{});
 }
 
 /// deinitialize
@@ -56,9 +90,15 @@ pub fn init(memory_interface: *peripherals.GpioMemMapper) !void {
 /// it will perform some cleanup for the internals of this implementation
 pub fn deinit() void {
     g_gpio_registers = null;
+    if (event_detection_thread) |thread| {
+        event_detection_thread_shutdown_request.store(true, .SeqCst);
+        thread.join();
+        event_detection_callback = null;
+        event_detection_thread = null;
+    }
 }
 
-// write the given level to the pin
+/// write the given level to the pin
 pub fn setLevel(pin_number: u8, level: Level) !void {
     try checkPinNumber(pin_number, bcm2835.BoardInfo);
 
@@ -67,15 +107,16 @@ pub fn setLevel(pin_number: u8, level: Level) !void {
     // and clearing works by writing a 1 to the bit that corresponds to the pin in the appropriate GPCLR{n} register
     // writing a 0 to those registers doesn't do anything
     const register_zero: u8 = switch (level) {
-        .High => comptime gpioRegisterZeroIndex("gpset_registers", bcm2835.BoardInfo), // "set" GPSET{n} registers
-        .Low => comptime gpioRegisterZeroIndex("gpclr_registers", bcm2835.BoardInfo), // "clear" GPCLR{n} registers
+        .High => comptime gpioRegisterZeroIndex("GPSET", bcm2835.BoardInfo), // "set" GPSET{n} registers
+        .Low => comptime gpioRegisterZeroIndex("GPCLR", bcm2835.BoardInfo), // "clear" GPCLR{n} registers
     };
 
     try setPinSingleBit(g_gpio_registers, .{ .pin_number = pin_number, .register_zero = register_zero }, 1);
 }
 
+/// get the level of the given pin
 pub fn getLevel(pin_number: u8) !Level {
-    const gplev_register_zero = comptime gpioRegisterZeroIndex("gplev_registers", bcm2835.BoardInfo);
+    const gplev_register_zero = comptime gpioRegisterZeroIndex("GPLEV", bcm2835.BoardInfo);
 
     const bit: u1 = try getPinSingleBit(g_gpio_registers, .{ .register_zero = gplev_register_zero, .pin_number = pin_number });
     if (bit == 0) {
@@ -84,7 +125,8 @@ pub fn getLevel(pin_number: u8) !Level {
         return .High;
     }
 }
-// set the mode for the given pin.
+
+/// set the mode for the given pin.
 pub fn setMode(pin_number: u8, mode: Mode) Error!void {
     var registers = g_gpio_registers orelse return Error.Uninitialized;
     try checkPinNumber(pin_number, bcm2835.BoardInfo);
@@ -95,7 +137,7 @@ pub fn setMode(pin_number: u8, mode: Mode) Error!void {
     // as of now 3 bits for the function and 32 bits for the register make 10 pins per register
     const pins_per_register = comptime @divTrunc(@bitSizeOf(peripherals.GpioRegister), @bitSizeOf(Mode));
 
-    const gpfsel_register_zero = comptime gpioRegisterZeroIndex("gpfsel_registers", bcm2835.BoardInfo);
+    const gpfsel_register_zero = comptime gpioRegisterZeroIndex("GPFSEL", bcm2835.BoardInfo);
     const n: @TypeOf(pin_number) = @divTrunc(pin_number, pins_per_register);
 
     // set the bits of the corresponding pins to zero so that we can bitwise or the correct mask to it below
@@ -103,13 +145,13 @@ pub fn setMode(pin_number: u8, mode: Mode) Error!void {
     registers[gpfsel_register_zero + n] |= modeMask(pin_number, mode); // use bitwise-| here TODO, this is dumb, rework the mode setting mask to not have the inverse!
 }
 
-// read the mode of the given pin number
+/// read the mode of the given pin number
 pub fn getMode(pin_number: u8) !Mode {
     var registers = g_gpio_registers orelse return Error.Uninitialized;
     try checkPinNumber(pin_number, bcm2835.BoardInfo);
 
     const pins_per_register = comptime @divTrunc(@bitSizeOf(peripherals.GpioRegister), @bitSizeOf(Mode));
-    const gpfsel_register_zero = comptime gpioRegisterZeroIndex("gpfsel_registers", bcm2835.BoardInfo);
+    const gpfsel_register_zero = comptime gpioRegisterZeroIndex("GPFSEL", bcm2835.BoardInfo);
     const n: @TypeOf(pin_number) = @divTrunc(pin_number, pins_per_register);
 
     const ModeIntType = (@typeInfo(Mode).Enum.tag_type);
@@ -132,8 +174,8 @@ pub fn setPull(pin_number: u8, mode: PullMode) Error!void {
     var registers = g_gpio_registers orelse return Error.Uninitialized;
 
     // see the GPPUCLK register description for how to set the pull up or pull down on a per pin basis
-    const gppud_register_zero = comptime gpioRegisterZeroIndex("gppud_register", bcm2835.BoardInfo);
-    const gppudclk_register_zero = comptime gpioRegisterZeroIndex("gppudclk_registers", bcm2835.BoardInfo);
+    const gppud_register_zero = comptime gpioRegisterZeroIndex("GPPUD", bcm2835.BoardInfo);
+    const gppudclk_register_zero = comptime gpioRegisterZeroIndex("GPPUDCLK", bcm2835.BoardInfo);
     const ten_us_in_ns = 10 * 1000;
     registers[gppud_register_zero] = @enumToInt(mode);
     // TODO this may be janky, because no precision of timing is guaranteed
@@ -146,6 +188,53 @@ pub fn setPull(pin_number: u8, mode: PullMode) Error!void {
     std.os.nanosleep(0, ten_us_in_ns);
     registers[gppud_register_zero] = @enumToInt(PullMode.Off);
     try setPinSingleBit(registers, .{ .pin_number = pin_number, .register_zero = gppudclk_register_zero }, 0);
+}
+
+/// set the 
+pub fn setDetectionMode(pin_number: u8, mode: Detection) !void {
+    try checkPinNumber(pin_number, bcm2835.BoardInfo);
+
+    // helper structure to define a helper function that sets the pin bit in the
+    // given register based on a truth value
+    const Lambda = struct {
+        pub fn setBit(pin_num: u8, comptime register_name: []const u8, enable: bool) !void {
+            try setPinSingleBit(g_gpio_registers, .{ .pin_number = pin_num, .register_zero = gpioRegisterZeroIndex(register_name, bcm2835.BoardInfo) }, if (enable) 1 else 0);
+        }
+    };
+
+    if (mode.high) |enable_high| {
+        try Lambda.setBit(pin_number, "GPHEN", enable_high);
+    }
+    if (mode.low) |enable_low| {
+        try Lambda.setBit(pin_number, "GPLEN", enable_low);
+    }
+    if (mode.rising) |enable_rising| {
+        try Lambda.setBit(pin_number, "GPREN", enable_rising);
+    }
+    if (mode.falling) |enable_falling| {
+        try Lambda.setBit(pin_number, "GPFEN", enable_falling);
+    }
+}
+
+/// set the callback function for event detection. Once this is function is called once,
+/// calling it again will produce an error, if deinit() was not called previously
+pub fn initDetectionCallback(callback : fn(pin_numbers : []const u8)void) !void {
+    if(event_detection_callback!=null) {
+        return Error.DectionCallbackAlreadySet;
+    }
+    _ = callback;
+    event_detection_callback = callback;
+    event_detection_function_set_condvar.signal();
+}
+
+/// the main loop of the detection thread that checks periodically if a detection event occurred
+fn detectionThreadLoop() void {
+    // although it is spawned on initialization, this thread is 
+    // dormant until it is signalled via the condition variable
+    var mtx = std.Thread.Mutex{};
+    const held = mtx.acquire();
+    event_detection_function_set_condvar.wait(&mtx);
+    held.release();
 }
 
 const PinAndRegister = struct {
@@ -175,7 +264,7 @@ inline fn getPinSingleBit(gpio_registers: ?peripherals.GpioRegisterMemory, pin_a
 
 /// helper function for simplifying the work with those contiguous registers where one GPIO pin is represented by one bit
 /// this function sets the respective bit to the given value
-inline fn setPinSingleBit(gpio_registers: ?peripherals.GpioRegisterMemory, pin_and_register: PinAndRegister, comptime value_to_set: u1) !void {
+inline fn setPinSingleBit(gpio_registers: ?peripherals.GpioRegisterMemory, pin_and_register: PinAndRegister, value_to_set: u1) !void {
     var registers = gpio_registers orelse return Error.Uninitialized;
     const pin_number = pin_and_register.pin_number;
     const register_zero = pin_and_register.register_zero;
@@ -201,8 +290,11 @@ inline fn modeMask(pin_number: u8, mode: Mode) peripherals.GpioRegister {
     return @intCast(peripherals.GpioRegister, @enumToInt(mode)) << @intCast(u5, (pin_bit_idx * @bitSizeOf(Mode)));
 }
 
+/// get the zero register offset for the register of the given name
 fn gpioRegisterZeroIndex(comptime register_name: []const u8, board_info: anytype) comptime_int {
-    return comptime std.math.divExact(comptime_int, @field(board_info, register_name).start - board_info.gpio_registers.start, @sizeOf(peripherals.GpioRegister)) catch @compileError("Offset not evenly divisible by register width");
+    return comptime @field(board_info, register_name).zero_offset;
+
+    //return comptime std.math.divExact(comptime_int, @field(board_info, register_name).start - board_info.gpio_registers.start, @sizeOf(peripherals.GpioRegister)) catch @compileError("Offset not evenly divisible by register width");
 }
 
 /// just a helper function that returns an error iff the given pin number is illegal
@@ -271,10 +363,10 @@ test "gpioRegisterZeroIndex" {
     comptime std.debug.assert(@sizeOf(peripherals.GpioRegister) == 4);
     // manually verified using the BCM2835 ARM Peripherals Manual
     const board_info = bcm2835.BoardInfo;
-    try testing.expectEqual(0, gpioRegisterZeroIndex("gpfsel_registers", board_info));
-    try testing.expectEqual(7, gpioRegisterZeroIndex("gpset_registers", board_info));
-    try testing.expectEqual(10, gpioRegisterZeroIndex("gpclr_registers", board_info));
-    try testing.expectEqual(13, gpioRegisterZeroIndex("gplev_registers", board_info));
+    try testing.expectEqual(0, gpioRegisterZeroIndex("GPFSEL", board_info));
+    try testing.expectEqual(7, gpioRegisterZeroIndex("GPSET", board_info));
+    try testing.expectEqual(10, gpioRegisterZeroIndex("GPCLR", board_info));
+    try testing.expectEqual(13, gpioRegisterZeroIndex("GPLEV", board_info));
 }
 
 test "checkPinNumber" {

@@ -1,6 +1,15 @@
 pub const GpioRegister: type = u32;
 pub const GpioRegisterMemory: type = []align(1) volatile GpioRegister;
 
+/// Information about where a given register can be found in gpiomem
+/// this assumes all registers have the same byte width of 4 bytes
+pub const GpioRegisterInfo = struct {
+    /// the index where the 0-th register of that type can be found
+    zero_offset: usize,
+    /// the number of registers of this type (expected to be layed out contiguously in memory)
+    count: usize,
+};
+
 /// an interface that gives us a mapping of the physical memory of the 
 /// peripherals
 pub const GpioMemMapper = struct {
@@ -13,6 +22,3 @@ pub const GpioMemMapper = struct {
         return interface.map_fn(interface);
     }
 };
-
-/// A physical adress starting at `start` with a length of `len` bytes
-pub const AddressRange = struct { start: usize, len: usize };

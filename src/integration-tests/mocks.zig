@@ -16,8 +16,8 @@ pub const MockGpioMemoryMapper = struct {
     allocator: *std.mem.Allocator,
 
     /// create a new mock that pretends it is mapping the given address range
-    pub fn init(allocator: *std.mem.Allocator, addresses_to_emulate: peripherals.AddressRange) !Self {
-        var initial = Self{ .allocator = allocator, .memory_mapper = .{ .map_fn = mappedPhysicalMemoryImpl }, .registers = try allocator.allocWithOptions(peripherals.GpioRegister, try std.math.divExact(usize, addresses_to_emulate.len, @sizeOf(peripherals.GpioRegister)), 1, null) };
+    pub fn init(allocator: *std.mem.Allocator, gpio_register_count : usize) !Self {
+        var initial = Self{ .allocator = allocator, .memory_mapper = .{ .map_fn = mappedPhysicalMemoryImpl }, .registers = try allocator.allocWithOptions(peripherals.GpioRegister, gpio_register_count, 1, null) };
         // zero initialize the buffer
         for (initial.registers) |*elem| {
             elem.* = 0;
@@ -25,6 +25,7 @@ pub const MockGpioMemoryMapper = struct {
         return initial;
     }
 
+    /// free the allocated memory
     pub fn deinit(self: *Self) void {
         self.allocator.free(self.registers);
     }
