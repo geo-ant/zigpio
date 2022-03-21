@@ -1,5 +1,5 @@
-pub const GpioRegister: type = u32;
-pub const GpioRegisterMemory: type = []align(1) volatile GpioRegister;
+pub const GpioRegister = u32;
+pub const GpioRegisterSlice = []align(1) volatile GpioRegister;
 
 /// Information about where a given register can be found in gpiomem
 /// this assumes all registers have the same byte width of 4 bytes
@@ -12,13 +12,13 @@ pub const GpioRegisterInfo = struct {
 
 /// an interface that gives us a mapping of the physical memory of the 
 /// peripherals
-pub const GpioMemMapper = struct {
+pub const GpioMemInterface = struct {
     /// pointer to the actual function that provides a mapping of the memory
-    map_fn: fn (*GpioMemMapper) anyerror!GpioRegisterMemory,
+    map_fn: fn (*GpioMemInterface) anyerror!GpioRegisterSlice,
 
     /// the convenience function with which to use the interface
     /// provides access to a mapping of the GPIO registers
-    pub fn memoryMap(interface: *GpioMemMapper) !GpioRegisterMemory {
+    pub fn memoryMap(interface: *GpioMemInterface) !GpioRegisterSlice {
         return interface.map_fn(interface);
     }
 };

@@ -51,19 +51,18 @@ pub const BoardInfo = struct {
     pub const NUM_GPIO_REGISTERS = 41;
 };
 
-pub const Bcm2385GpioMemoryMapper = struct {
+pub const Bcm2385GpioMemoryInterface = struct {
     const Self: type = @This();
 
     /// the GpioMemMapper interface
-    memory_mapper: peripherals.GpioMemMapper,
+    memory_mapper: peripherals.GpioMemInterface,
     /// the raw bytes representing the memory mapping
     devgpiomem: []align(std.mem.page_size) u8,
 
     pub fn init() !Self {
         const devgpiomem = try std.fs.openFileAbsolute("/dev/gpiomem", std.fs.File.OpenFlags{ .read = true, .write = true });
         defer devgpiomem.close();
-
-        return Self{ .devgpiomem = try std.os.mmap(null, BoardInfo.gpio_registers.len, std.os.PROT.READ | std.os.PROT.WRITE, std.os.MAP.SHARED, devgpiomem.handle, 0), .memory_mapper = .{ .map_fn = Self.memoryMap } };
+        return Self{ .devgpiomem = try std.os.mmap(null, BoardInfo.NUM_GPIO_REGISTERS * @sizeOf(peripherals.GpioRegister), std.os.PROT.READ | std.os.PROT.WRITE, std.os.MAP.SHARED, devgpiomem.handle, 0), .memory_mapper = .{ .map_fn = Self.memoryMap } };
     }
 
     /// unmap the mapped memory
@@ -71,8 +70,8 @@ pub const Bcm2385GpioMemoryMapper = struct {
         std.os.munmap(self.devgpiomem);
     }
 
-    pub fn memoryMap(interface: *peripherals.GpioMemMapper) !peripherals.GpioRegisterMemory {
+    pub fn memoryMap(interface: *peripherals.GpioMemInterface) !peripherals.GpioRegisterSlice {
         var self = @fieldParentPtr(Self, "memory_mapper", interface);
-        return std.mem.bytesAsSlice(u32, self.devgpiomem);
+        return std.mem.bytesAsSlice(peripherals.GpioRegister, self.devgpiomem);
     }
 };

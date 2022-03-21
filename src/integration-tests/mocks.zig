@@ -9,9 +9,9 @@ pub const MockGpioMemoryMapper = struct {
 
     /// the buffer used to provide the mock memory.
     /// This is allocated and deallocated in this buffer
-    registers: peripherals.GpioRegisterMemory,
+    registers: peripherals.GpioRegisterSlice,
     /// the memory mapper interface
-    memory_mapper: peripherals.GpioMemMapper,
+    memory_mapper: peripherals.GpioMemInterface,
     /// the allocator so we can use it for deallocation
     allocator: *std.mem.Allocator,
 
@@ -43,7 +43,7 @@ pub const MockGpioMemoryMapper = struct {
         }
     }
 
-    fn mappedPhysicalMemoryImpl(interface: *peripherals.GpioMemMapper) !peripherals.GpioRegisterMemory {
+    fn mappedPhysicalMemoryImpl(interface: *peripherals.GpioMemInterface) !peripherals.GpioRegisterSlice {
         const self = @fieldParentPtr(Self, "memory_mapper", interface);
         return self.registers;
     }

@@ -65,10 +65,10 @@ pub const Error = error{
 
 /// if initialized points to the memory block that is provided by the gpio
 /// memory mapping interface
-var g_gpio_registers: ?peripherals.GpioRegisterMemory = null;
+var g_gpio_registers: ?peripherals.GpioRegisterSlice = null;
 
 /// initialize the GPIO control with the given memory mapping
-pub fn init(memory_interface: *peripherals.GpioMemMapper) !void {
+pub fn init(memory_interface: *peripherals.GpioMemInterface) !void {
     g_gpio_registers = try memory_interface.memoryMap();
 }
 
@@ -122,8 +122,8 @@ pub fn setMode(pin_number: u8, mode: Mode) Error!void {
     const n: @TypeOf(pin_number) = @divTrunc(pin_number, pins_per_register);
 
     // set the bits of the corresponding pins to zero so that we can bitwise or the correct mask to it below
-    registers[gpfsel_register_zero + n] &= clearMask(pin_number); // use bitwise-& here
-    registers[gpfsel_register_zero + n] |= modeMask(pin_number, mode); // use bitwise-| here TODO, this is dumb, rework the mode setting mask to not have the inverse!
+    registers[gpfsel_register_zero + n] &= clearMask(pin_number);
+    registers[gpfsel_register_zero + n] |= modeMask(pin_number, mode); 
 }
 
 /// read the mode of the given pin number
@@ -204,7 +204,7 @@ const PinAndRegister = struct {
 
 /// helper function for simplifying working with those contiguous registers where one GPIO bin is represented by one bit
 /// needs the zero register for the set and the pin number and returns the bit (or an error)
-inline fn getPinSingleBit(gpio_registers: ?peripherals.GpioRegisterMemory, pin_and_register: PinAndRegister) !u1 {
+inline fn getPinSingleBit(gpio_registers: ?peripherals.GpioRegisterSlice, pin_and_register: PinAndRegister) !u1 {
     var registers = gpio_registers orelse return Error.Uninitialized;
     const pin_number = pin_and_register.pin_number;
     const register_zero = pin_and_register.register_zero;
@@ -224,7 +224,7 @@ inline fn getPinSingleBit(gpio_registers: ?peripherals.GpioRegisterMemory, pin_a
 
 /// helper function for simplifying the work with those contiguous registers where one GPIO pin is represented by one bit
 /// this function sets the respective bit to the given value
-inline fn setPinSingleBit(gpio_registers: ?peripherals.GpioRegisterMemory, pin_and_register: PinAndRegister, value_to_set: u1) !void {
+inline fn setPinSingleBit(gpio_registers: ?peripherals.GpioRegisterSlice, pin_and_register: PinAndRegister, value_to_set: u1) !void {
     var registers = gpio_registers orelse return Error.Uninitialized;
     const pin_number = pin_and_register.pin_number;
     const register_zero = pin_and_register.register_zero;
