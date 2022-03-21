@@ -7,7 +7,7 @@ const peripherals = @import("../peripherals.zig");
 test "SetLevel - High" {
     std.testing.log_level = .debug;
     var allocator = std.testing.allocator;
-    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.gpio_registers);
+    var gpiomem = try mocks.MockGpioMemoryMapper.init(&allocator, bcm2835.BoardInfo.gpio_registers);
     defer gpiomem.deinit();
 
     try gpio.init(&gpiomem.memory_mapper);
@@ -33,7 +33,7 @@ test "SetLevel - High" {
 test "SetLevel - Low" {
     std.testing.log_level = .debug;
     var allocator = std.testing.allocator;
-    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.gpio_registers);
+    var gpiomem = try mocks.MockGpioMemoryMapper.init(&allocator, bcm2835.BoardInfo.gpio_registers);
     defer gpiomem.deinit();
 
     try gpio.init(&gpiomem.memory_mapper);
@@ -56,7 +56,7 @@ test "SetLevel - Low" {
 test "GetLevel" {
     std.testing.log_level = .debug;
     var allocator = std.testing.allocator;
-    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.gpio_registers);
+    var gpiomem = try mocks.MockGpioMemoryMapper.init(&allocator, bcm2835.BoardInfo.gpio_registers);
     defer gpiomem.deinit();
 
     try gpio.init(&gpiomem.memory_mapper);
@@ -87,7 +87,7 @@ test "GetLevel" {
 test "SetMode" {
     std.testing.log_level = .debug;
     var allocator = std.testing.allocator;
-    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.gpio_registers);
+    var gpiomem = try mocks.MockGpioMemoryMapper.init(&allocator, bcm2835.BoardInfo.gpio_registers);
     defer gpiomem.deinit();
 
     try gpio.init(&gpiomem.memory_mapper);
@@ -110,7 +110,7 @@ test "SetMode" {
 test "GetMode" {
     std.testing.log_level = .debug;
     var allocator = std.testing.allocator;
-    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.gpio_registers);
+    var gpiomem = try mocks.MockGpioMemoryMapper.init(&allocator, bcm2835.BoardInfo.gpio_registers);
     defer gpiomem.deinit();
 
     try gpio.init(&gpiomem.memory_mapper);
@@ -132,7 +132,7 @@ test "GetMode" {
 test "setPull" {
     std.testing.log_level = .debug;
     var allocator = std.testing.allocator;
-    var gpiomem = try mocks.MockGpioMemoryMapper.init(allocator, bcm2835.BoardInfo.gpio_registers);
+    var gpiomem = try mocks.MockGpioMemoryMapper.init(&allocator, bcm2835.BoardInfo.gpio_registers);
     defer gpiomem.deinit();
 
     try gpio.init(&gpiomem.memory_mapper);
